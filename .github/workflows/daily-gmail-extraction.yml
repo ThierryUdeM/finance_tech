@@ -56,8 +56,8 @@ jobs:
         STORAGE_ACCOUNT_NAME: ${{ secrets.STORAGE_ACCOUNT_NAME }}
         CONTAINER_NAME: ${{ secrets.CONTAINER_NAME }}
       run: |
+        cp /tmp/client_secret.json scripts/client_secret_948428206366-q9aptd5ffh3c95c5igoq6l5ac14ee3ll.apps.googleusercontent.com.json
         cd scripts
-        cp /tmp/client_secret.json client_secret_948428206366-q9aptd5ffh3c95c5igoq6l5ac14ee3ll.apps.googleusercontent.com.json
         Rscript gmail.R
         
     - name: Upload to Azure Blob Storage
@@ -66,7 +66,6 @@ jobs:
         STORAGE_ACCOUNT_NAME: ${{ secrets.STORAGE_ACCOUNT_NAME }}
         CONTAINER_NAME: ${{ secrets.CONTAINER_NAME }}
       run: |
-        cd scripts
         Rscript -e "
         library(AzureStor)
         
@@ -88,7 +87,7 @@ jobs:
         timestamp <- format(Sys.time(), '%Y%m%d_%H%M%S')
         filename <- paste0('gmail_orders_extracted_', timestamp, '.csv')
         
-        upload_blob(container, 'gmail_orders_extracted.csv', filename)
+        upload_blob(container, 'scripts/gmail_orders_extracted.csv', filename)
         cat('Successfully uploaded', filename, 'to Azure Blob Storage\n')
         "
         
