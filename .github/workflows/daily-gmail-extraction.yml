@@ -56,6 +56,7 @@ jobs:
         STORAGE_ACCOUNT_NAME: ${{ secrets.STORAGE_ACCOUNT_NAME }}
         CONTAINER_NAME: ${{ secrets.CONTAINER_NAME }}
       run: |
+        mkdir -p scripts
         cp /tmp/client_secret.json scripts/client_secret_948428206366-q9aptd5ffh3c95c5igoq6l5ac14ee3ll.apps.googleusercontent.com.json
         cd scripts
         Rscript gmail.R
