@@ -1,0 +1,89 @@
+name: Daily Gmail Orders Extraction
+
+on:
+  schedule:
+    # Run daily at 8:00 AM UTC
+    - cron: '0 8 * * *'
+  workflow_dispatch: # Allow manual triggering
+
+jobs:
+  extract-and-upload:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+      
+    - name: Setup R
+      uses: r-lib/actions/setup-r@v2
+      with:
+        r-version: '4.3.0'
+        
+    - name: Cache R packages
+      uses: actions/cache@v3
+      with:
+        path: ${{ env.R_LIBS_USER }}
+        key: ${{ runner.os }}-R-${{ hashFiles('**/DESCRIPTION') }}
+        restore-keys: ${{ runner.os }}-R-
+        
+    - name: Install system dependencies
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y libcurl4-openssl-dev libssl-dev libxml2-dev
+        
+    - name: Install R dependencies
+      run: |
+        Rscript -e "install.packages(c('gmailr', 'dplyr', 'stringr', 'base64enc', 'tidyr', 'purrr', 'gargle', 'AzureStor'), repos='https://cran.rstudio.com/')"
+        
+    - name: Setup Google OAuth credentials
+      run: |
+        echo '${{ secrets.GOOGLE_CLIENT_SECRET }}' > /tmp/client_secret.json
+        
+    - name: Run Gmail extraction
+      env:
+        GOOGLE_APPLICATION_CREDENTIALS: /tmp/client_secret.json
+        ACCESS_KEY: ${{ secrets.ACCESS_KEY }}
+        STORAGE_ACCOUNT_NAME: ${{ secrets.STORAGE_ACCOUNT_NAME }}
+        CONTAINER_NAME: ${{ secrets.CONTAINER_NAME }}
+      run: |
+        cd scripts
+        cp /tmp/client_secret.json client_secret_948428206366-q9aptd5ffh3c95c5igoq6l5ac14ee3ll.apps.googleusercontent.com.json
+        Rscript gmail.R
+        
+    - name: Upload to Azure Blob Storage
+      env:
+        ACCESS_KEY: ${{ secrets.ACCESS_KEY }}
+        STORAGE_ACCOUNT_NAME: ${{ secrets.STORAGE_ACCOUNT_NAME }}
+        CONTAINER_NAME: ${{ secrets.CONTAINER_NAME }}
+      run: |
+        cd scripts
+        Rscript -e "
+        library(AzureStor)
+        
+        # Get environment variables
+        storage_account_name <- Sys.getenv('STORAGE_ACCOUNT_NAME')
+        container_name <- Sys.getenv('CONTAINER_NAME')
+        access_key <- Sys.getenv('ACCESS_KEY')
+        
+        # Create a blob endpoint
+        endpoint <- storage_endpoint(
+          paste0('https://', storage_account_name, '.blob.core.windows.net'),
+          key = access_key
+        )
+        
+        # Connect to the container
+        container <- blob_container(endpoint, container_name)
+        
+        # Upload the CSV file with timestamp
+        timestamp <- format(Sys.time(), '%Y%m%d_%H%M%S')
+        filename <- paste0('gmail_orders_extracted_', timestamp, '.csv')
+        
+        upload_blob(container, 'gmail_orders_extracted.csv', filename)
+        cat('Successfully uploaded', filename, 'to Azure Blob Storage\n')
+        "
+        
+    - name: Clean up credentials
+      if: always()
+      run: |
+        rm -f /tmp/client_secret.json
+        rm -f scripts/client_secret_948428206366-q9aptd5ffh3c95c5igoq6l5ac14ee3ll.apps.googleusercontent.com.json
