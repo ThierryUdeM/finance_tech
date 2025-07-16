@@ -23,17 +23,27 @@ jobs:
       uses: actions/cache@v3
       with:
         path: ${{ env.R_LIBS_USER }}
-        key: ${{ runner.os }}-R-${{ hashFiles('**/DESCRIPTION') }}
-        restore-keys: ${{ runner.os }}-R-
+        key: ${{ runner.os }}-R-packages-${{ hashFiles('**/renv.lock', '**/DESCRIPTION') }}-v2
+        restore-keys: |
+          ${{ runner.os }}-R-packages-
+          ${{ runner.os }}-R-
         
     - name: Install system dependencies
       run: |
         sudo apt-get update
         sudo apt-get install -y libcurl4-openssl-dev libssl-dev libxml2-dev
         
+    - name: Setup package manager
+      run: |
+        Rscript -e "options(repos = c(RSPM = 'https://packagemanager.rstudio.com/all/__linux__/jammy/latest', CRAN = 'https://cran.rstudio.com/'))"
+        
     - name: Install R dependencies
       run: |
-        Rscript -e "install.packages(c('gmailr', 'dplyr', 'stringr', 'base64enc', 'tidyr', 'purrr', 'gargle', 'AzureStor'), repos='https://cran.rstudio.com/')"
+        Rscript -e "
+        options(repos = c(RSPM = 'https://packagemanager.rstudio.com/all/__linux__/jammy/latest', CRAN = 'https://cran.rstudio.com/'))
+        packages <- c('gmailr', 'dplyr', 'stringr', 'base64enc', 'tidyr', 'purrr', 'gargle', 'AzureStor')
+        install.packages(packages, Ncpus = parallel::detectCores())
+        "
         
     - name: Setup Google OAuth credentials
       run: |
