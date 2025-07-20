@@ -1,8 +1,21 @@
-# BTC YOLO Predictions - GitHub Actions
+# YOLO Predictions - GitHub Actions Workflows
 
-This workflow automatically runs Bitcoin price predictions using YOLO every hour and stores results in Azure Blob Storage.
+This directory contains workflows for automated trading signal predictions using YOLO on financial charts.
 
-## Features
+## Available Workflows
+
+### 1. btc-predictions.yml
+- **Purpose**: Bitcoin-only predictions
+- **Schedule**: Every hour
+- **Output**: BTC trading signals
+
+### 2. multi-ticker-predictions.yml
+- **Purpose**: Multiple ticker predictions
+- **Schedule**: Every hour
+- **Tickers**: BTC-USD, NVDA, AC.TO
+- **Output**: Trading signals for all tickers
+
+## Common Features
 
 - **Hourly Predictions**: Runs every hour at minute 0
 - **Multi-timeframe Analysis**: 15m, 1h, 4h, 1d charts
@@ -49,12 +62,23 @@ The workflow needs access to the YOLO weights file. Options:
 
 ### 4. Enable GitHub Actions
 
-Push the workflow file to trigger it:
+Choose which workflow to use:
+
+**For Bitcoin only:**
 ```bash
 git add .github/workflows/btc-predictions.yml
 git commit -m "Add BTC prediction workflow"
 git push
 ```
+
+**For multiple tickers:**
+```bash
+git add .github/workflows/multi-ticker-predictions.yml
+git commit -m "Add multi-ticker prediction workflow"
+git push
+```
+
+**Important**: Only enable ONE workflow to avoid duplicate predictions.
 
 ## Workflow Schedule
 
@@ -64,21 +88,28 @@ git push
 
 ## Azure Storage Structure
 
+**For multi-ticker workflow:**
 ```
-btc-predictions/
+your-container/
 ├── predictions/
-│   └── YYYY-MM-DD/
-│       └── HH.json          # Hourly predictions
+│   └── {ticker}/
+│       └── YYYY-MM-DD/
+│           └── HH.json          # Hourly predictions
 ├── evaluations/
-│   └── YYYY-MM-DD/
-│       └── HHMMSS.json      # Performance evaluations
+│   └── {ticker}/
+│       └── YYYY-MM-DD/
+│           └── HHMMSS.json      # Performance evaluations
 ├── charts/
+│   └── {ticker}/
+│       └── YYYY-MM-DD/
+│           └── HH/
+│               ├── 15m.png
+│               ├── 1h.png
+│               ├── 4h.png
+│               └── 1d.png
+├── summaries/
 │   └── YYYY-MM-DD/
-│       └── HH/
-│           ├── 15m.png
-│           ├── 1h.png
-│           ├── 4h.png
-│           └── 1d.png
+│       └── HH.json              # Combined hourly summary
 └── reports/
     └── performance_YYYYMMDD_HHMMSS.json
 ```
@@ -121,10 +152,28 @@ CONFIG = {
 ```
 
 ### Add More Tickers
-Modify the script to analyze multiple cryptocurrencies:
+Modify `multi_ticker_predictor_azure.py`:
 ```python
 CONFIG = {
-    'tickers': ['BTC-USD', 'ETH-USD', 'SOL-USD']
+    'tickers': {
+        'BTC-USD': {
+            'name': 'Bitcoin',
+            'evaluation_threshold': 0.5
+        },
+        'NVDA': {
+            'name': 'NVIDIA',
+            'evaluation_threshold': 0.3
+        },
+        'AC.TO': {
+            'name': 'Air Canada',
+            'evaluation_threshold': 0.5
+        },
+        # Add your new ticker here:
+        'AAPL': {
+            'name': 'Apple',
+            'evaluation_threshold': 0.3
+        }
+    }
 }
 ```
 
@@ -142,8 +191,17 @@ CONFIG = {
 
 ## Local Testing
 
-Run the predictor locally:
+Test configuration:
 ```bash
 cd ChartScanAI_Shiny
+python test_multi_ticker.py
+```
+
+Run predictions:
+```bash
+# For Bitcoin only
 python btc_predictor_azure.py
+
+# For multiple tickers
+python multi_ticker_predictor_azure.py
 ```

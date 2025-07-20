@@ -1,13 +1,14 @@
-# BTC YOLO Predictions - Automated Trading Signal Analysis
+# Multi-Ticker YOLO Predictions - Automated Trading Signal Analysis
 
-Automated Bitcoin trading signal detection using YOLOv8, running on GitHub Actions with Azure Storage.
+Automated trading signal detection for multiple stocks using YOLOv8, running on GitHub Actions with Azure Storage.
 
 ## Features
 
-- 🤖 Automated hourly BTC price predictions using custom-trained YOLO
+- 🤖 Automated hourly predictions for multiple tickers using custom-trained YOLO
 - 📊 Multi-timeframe analysis (15m, 1h, 4h, 1d)
+- 💹 Support for BTC-USD, NVDA, and AC.TO
 - ☁️ Azure Blob Storage for data persistence
-- 📈 Performance tracking and evaluation
+- 📈 Performance tracking and evaluation per ticker
 - 📅 Weekly performance reports
 - 🔄 Fully automated via GitHub Actions
 
@@ -36,34 +37,43 @@ The workflow will run automatically every hour!
 
 ```
 ├── .github/workflows/
-│   ├── btc-predictions.yml    # GitHub Actions workflow
-│   └── README.md              # Workflow documentation
+│   ├── btc-predictions.yml            # Original BTC-only workflow
+│   ├── multi-ticker-predictions.yml   # Multi-ticker workflow
+│   └── README.md                      # Workflow documentation
 ├── ChartScanAI_Shiny/
-│   ├── btc_predictor_azure.py # Main prediction script
-│   ├── setup_azure.py         # Azure setup/test script
-│   ├── requirements.txt       # Python dependencies
-│   └── upload_weights_to_azure.py # Weight upload utility
+│   ├── btc_predictor_azure.py         # Original BTC prediction script
+│   ├── multi_ticker_predictor_azure.py # Multi-ticker prediction script
+│   ├── setup_azure.py                 # Azure setup/test script
+│   ├── requirements.txt               # Python dependencies
+│   └── upload_weights_to_azure.py     # Weight upload utility
 └── ChartScanAI/
     └── weights/
-        └── custom_yolov8.pt   # Custom-trained YOLO model
+        └── custom_yolov8.pt           # Custom-trained YOLO model
 ```
 
 ## How It Works
 
 1. **Every hour**: GitHub Actions triggers the workflow
-2. **Data Collection**: Downloads latest BTC price data from Yahoo Finance
-3. **Chart Generation**: Creates candlestick charts for each timeframe
+2. **Data Collection**: Downloads latest price data for all tickers from Yahoo Finance
+3. **Chart Generation**: Creates candlestick charts for each ticker and timeframe
 4. **YOLO Analysis**: Custom-trained model detects Buy/Sell signals
-5. **Azure Storage**: Saves predictions, charts, and evaluations
-6. **Performance Tracking**: Evaluates predictions after 1 hour
-7. **Weekly Reports**: Summarizes accuracy metrics
+5. **Azure Storage**: Saves predictions, charts, and evaluations organized by ticker
+6. **Performance Tracking**: Evaluates predictions after 1 hour for each ticker
+7. **Weekly Reports**: Summarizes accuracy metrics for all tickers
+
+## Supported Tickers
+
+- **BTC-USD**: Bitcoin (Cryptocurrency)
+- **NVDA**: NVIDIA Corporation (NASDAQ)
+- **AC.TO**: Air Canada (TSX)
 
 ## Monitoring Results
 
 View your predictions in Azure Storage Explorer:
-- `predictions/` - Hourly prediction results
-- `evaluations/` - Performance tracking
-- `charts/` - Generated candlestick charts
+- `predictions/{ticker}/` - Hourly prediction results per ticker
+- `evaluations/{ticker}/` - Performance tracking per ticker
+- `charts/{ticker}/` - Generated candlestick charts per ticker
+- `summaries/` - Combined hourly summaries
 - `reports/` - Weekly performance summaries
 
 ## Local Development
@@ -71,14 +81,19 @@ View your predictions in Azure Storage Explorer:
 Run predictions locally:
 ```bash
 cd ChartScanAI_Shiny
+# For multi-ticker predictions
+python multi_ticker_predictor_azure.py
+
+# For BTC-only predictions
 python btc_predictor_azure.py
 ```
 
 ## Success Criteria
 
-- **BUY**: Correct if price increases >0.5% within 1 hour
-- **SELL**: Correct if price decreases >0.5% within 1 hour
-- **HOLD**: Correct if price stays within ±0.5%
+Success thresholds vary by ticker type:
+- **BTC-USD**: Correct if price changes >0.5% within 1 hour
+- **NVDA**: Correct if price changes >0.3% within 1 hour  
+- **AC.TO**: Correct if price changes >0.5% within 1 hour
 
 ## License
 
