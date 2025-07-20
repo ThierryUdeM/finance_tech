@@ -30,7 +30,7 @@ logger = logging.getLogger(__name__)
 CONFIG = {
     'ticker': 'BTC-USD',
     'intervals': ['15m', '1h', '4h', '1d'],
-    'model_path': 'weights/custom_yolov8.pt',
+    'model_path': '../ChartScanAI/weights/custom_yolov8.pt',
     'confidence_threshold': 0.3,
     'evaluation_threshold': 0.5  # Price change % for success
 }
