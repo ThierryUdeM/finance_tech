@@ -50,7 +50,7 @@ jobs:
           pip install azure-storage-blob
           
           # Download weights using Python
-          python << 'EOF'
+          cat > download_weights.py << 'EOF'
 from azure.storage.blob import BlobServiceClient
 import os
 
@@ -66,6 +66,8 @@ with open('ChartScanAI/weights/custom_yolov8.pt', 'wb') as f:
     f.write(blob_client.download_blob().readall())
 print('Weights downloaded successfully!')
 EOF
+          python download_weights.py
+          rm download_weights.py
         fi
     
     - name: Run predictions and evaluation
@@ -119,8 +121,10 @@ EOF
         CONTAINER_NAME: ${{ secrets.CONTAINER_NAME }}
       run: |
         cd ChartScanAI_Shiny
-        python << 'EOF'
+        cat > generate_report.py << 'EOF'
 from btc_predictor_azure import BTCPredictor
 predictor = BTCPredictor()
 predictor.generate_performance_report(days=7)
 EOF
+        python generate_report.py
+        rm generate_report.py
