@@ -163,6 +163,9 @@ class PatternSignalTracker:
         
         # Filter signals from the specified time period
         cutoff_time = datetime.now() - timedelta(hours=hours_back)
+        # Make timestamps timezone-aware for consistent comparison
+        df['timestamp'] = df['timestamp'].dt.tz_localize('UTC')
+        cutoff_time = pd.to_datetime(cutoff_time).tz_localize('UTC')
         df = df[df['timestamp'] >= cutoff_time]
         
         if df.empty:
@@ -210,6 +213,10 @@ class PatternSignalTracker:
     def _evaluate_single_signal(self, signal, price_data):
         """Evaluate a single signal against price data"""
         signal_time = pd.to_datetime(signal['timestamp'])
+        
+        # Make signal_time timezone-aware to match price_data index
+        if signal_time.tz is None:
+            signal_time = signal_time.tz_localize('UTC')
         
         # Get price data after signal time
         future_prices = price_data[price_data.index > signal_time]
