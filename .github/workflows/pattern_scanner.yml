@@ -85,9 +85,9 @@ jobs:
       run: |
         mkdir -p config
         cat > config/.env << EOF
-        AZURE_STORAGE_ACCOUNT=${{ secrets.AZURE_STORAGE_ACCOUNT }}
-        AZURE_STORAGE_KEY=${{ secrets.AZURE_STORAGE_KEY }}
-        AZURE_CONTAINER_NAME=${{ secrets.AZURE_CONTAINER_NAME }}
+        AZURE_STORAGE_ACCOUNT=${{ secrets.STORAGE_ACCOUNT_NAME }}
+        AZURE_STORAGE_KEY=${{ secrets.ACCESS_KEY }}
+        AZURE_CONTAINER_NAME=${{ secrets.CONTAINER_NAME }}
         EOF
     
     - name: Copy pattern scanner module
@@ -114,6 +114,7 @@ jobs:
         path: |
           *.log
           signals_*.json
+        if-no-files-found: warn
 
   evaluate-signals:
     needs: setup-environment
@@ -140,9 +141,9 @@ jobs:
       run: |
         mkdir -p config
         cat > config/.env << EOF
-        AZURE_STORAGE_ACCOUNT=${{ secrets.AZURE_STORAGE_ACCOUNT }}
-        AZURE_STORAGE_KEY=${{ secrets.AZURE_STORAGE_KEY }}
-        AZURE_CONTAINER_NAME=${{ secrets.AZURE_CONTAINER_NAME }}
+        AZURE_STORAGE_ACCOUNT=${{ secrets.STORAGE_ACCOUNT_NAME }}
+        AZURE_STORAGE_KEY=${{ secrets.ACCESS_KEY }}
+        AZURE_CONTAINER_NAME=${{ secrets.CONTAINER_NAME }}
         EOF
     
     - name: Copy pattern scanner module
@@ -169,6 +170,7 @@ jobs:
         path: |
           *.log
           evaluation_*.json
+        if-no-files-found: warn
 
   daily-report:
     if: github.event_name == 'schedule'
@@ -193,9 +195,9 @@ jobs:
       run: |
         mkdir -p config
         cat > config/.env << EOF
-        AZURE_STORAGE_ACCOUNT=${{ secrets.AZURE_STORAGE_ACCOUNT }}
-        AZURE_STORAGE_KEY=${{ secrets.AZURE_STORAGE_KEY }}
-        AZURE_CONTAINER_NAME=${{ secrets.AZURE_CONTAINER_NAME }}
+        AZURE_STORAGE_ACCOUNT=${{ secrets.STORAGE_ACCOUNT_NAME }}
+        AZURE_STORAGE_KEY=${{ secrets.ACCESS_KEY }}
+        AZURE_CONTAINER_NAME=${{ secrets.CONTAINER_NAME }}
         EOF
     
     - name: Generate daily report
