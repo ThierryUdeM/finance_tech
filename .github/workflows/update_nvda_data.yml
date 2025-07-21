@@ -1,9 +1,9 @@
-name: Update NVDA Data
+name: Update NVDA Historical Data
 
 on:
   schedule:
-    # Run weekly on Sunday at midnight
-    # Note: Yahoo Finance only provides 15-minute data for the last 60 days
+    # Run weekly on Sunday at midnight to append new data
+    # Maintains a continuous 15-minute historical dataset
     - cron: '0 0 * * 0'
   workflow_dispatch:
 
@@ -26,46 +26,13 @@ jobs:
       run: |
         pip install yfinance pandas azure-storage-blob python-dotenv
         
-    - name: Download and upload NVDA data
+    - name: Update NVDA historical data
       env:
         AZURE_STORAGE_ACCOUNT: ${{ secrets.STORAGE_ACCOUNT_NAME }}
         AZURE_STORAGE_KEY: ${{ secrets.ACCESS_KEY }}
         AZURE_CONTAINER_NAME: ${{ secrets.CONTAINER_NAME }}
       run: |
         mkdir -p data
-        python3 download_nvda_historical.py
         
-        # Upload to Azure blob storage
-        python3 -c "
-import os
-from azure.storage.blob import BlobServiceClient
-from datetime import datetime
-
-# Azure connection using account key
-account_name = os.environ.get('AZURE_STORAGE_ACCOUNT')
-account_key = os.environ.get('AZURE_STORAGE_KEY')
-container_name = os.environ.get('AZURE_CONTAINER_NAME')
-
-if account_name and account_key and container_name:
-    # Create connection string from components
-    connection_string = f'DefaultEndpointsProtocol=https;AccountName={account_name};AccountKey={account_key};EndpointSuffix=core.windows.net'
-    
-    blob_service = BlobServiceClient.from_connection_string(connection_string)
-    
-    # Upload the file
-    blob_name = f'NVDA/NVDA_15min_pattern_ready_{datetime.now().strftime(\"%Y%m%d\")}.csv'
-    blob_client = blob_service.get_blob_client(container=container_name, blob=blob_name)
-    
-    with open('data/NVDA_15min_pattern_ready.csv', 'rb') as data:
-        blob_client.upload_blob(data, overwrite=True)
-    
-    print(f'Uploaded NVDA data to Azure: {blob_name}')
-    print(f'Container: {container_name}')
-    print(f'Storage Account: {account_name}')
-else:
-    print('Azure credentials not found. Please set:')
-    print('- STORAGE_ACCOUNT_NAME')
-    print('- ACCESS_KEY')
-    print('- CONTAINER_NAME')
-    print('Data saved locally only')
-"
+        # Update the historical data file by appending new data
+        python3 update_historical_data.py
