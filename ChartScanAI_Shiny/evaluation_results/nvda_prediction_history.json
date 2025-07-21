@@ -19,5 +19,26 @@
       "3h": "pending",
       "eod": "pending"
     }
+  },
+  {
+    "timestamp": "2025-07-21 18:54:35",
+    "current_price": 172.76499938964844,
+    "pred_1h_pct": -0.17796682265668085,
+    "pred_1h_price": 172.45753500957184,
+    "pred_1h_dir": "BEARISH",
+    "pred_3h_pct": 0.05478366169140064,
+    "pred_3h_price": 172.85964638243522,
+    "pred_3h_dir": "NEUTRAL",
+    "pred_eod_pct": 0.2627530146379712,
+    "pred_eod_price": 173.218944633784,
+    "pred_eod_dir": "BULLISH",
+    "patterns_analyzed": 43014,
+    "confidence": "MEDIUM",
+    "prediction_time": "2025-07-21T18:54:35.434687",
+    "evaluation_status": {
+      "1h": "pending",
+      "3h": "pending",
+      "eod": "pending"
+    }
   }
 ]

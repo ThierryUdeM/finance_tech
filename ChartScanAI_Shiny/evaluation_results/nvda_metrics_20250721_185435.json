@@ -1,0 +1,26 @@
+{
+  "1h": {
+    "total_predictions": 0,
+    "correct_predictions": 0,
+    "direction_accuracy": 0,
+    "avg_error": 0,
+    "max_error": 0,
+    "min_error": 0
+  },
+  "3h": {
+    "total_predictions": 0,
+    "correct_predictions": 0,
+    "direction_accuracy": 0,
+    "avg_error": 0,
+    "max_error": 0,
+    "min_error": 0
+  },
+  "eod": {
+    "total_predictions": 0,
+    "correct_predictions": 0,
+    "direction_accuracy": 0,
+    "avg_error": 0,
+    "max_error": 0,
+    "min_error": 0
+  }
+}
