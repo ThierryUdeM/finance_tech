@@ -53,7 +53,20 @@ class PatternSignalTracker:
             return None
         
         # Clean data
-        cleaned_data = pattern_scanner.clean_yfinance_data(data)
+        # Try to use the pattern_scanner method, fallback to local implementation
+        if hasattr(pattern_scanner, 'clean_yfinance_data'):
+            cleaned_data = pattern_scanner.clean_yfinance_data(data)
+        else:
+            # Fallback cleaning implementation
+            cleaned_data = data.copy()
+            # Ensure column names are simple (not multi-level)
+            if isinstance(cleaned_data.columns, pd.MultiIndex):
+                cleaned_data.columns = cleaned_data.columns.get_level_values(0)
+            # Ensure numeric data
+            for col in ['Open', 'High', 'Low', 'Close', 'Volume']:
+                if col in cleaned_data.columns:
+                    cleaned_data[col] = pd.to_numeric(cleaned_data[col], errors='coerce')
+            cleaned_data.dropna(inplace=True)
         
         # Define patterns to check
         patterns = {

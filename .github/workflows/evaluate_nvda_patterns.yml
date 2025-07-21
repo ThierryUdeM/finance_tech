@@ -15,7 +15,7 @@ jobs:
   evaluate:
     runs-on: ubuntu-latest
     permissions:
-      contents: read
+      contents: write  # Changed from read to write
       issues: write
     
     steps:
