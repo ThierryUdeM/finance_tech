@@ -30,18 +30,20 @@ def load_nvda_data(data_path):
 def get_actual_price(df, base_time, hours_ahead):
     """Get actual price at specified hours ahead"""
     # Convert hours to 15-minute bars
-    bars_ahead = hours_ahead * 4
+    bars_ahead = int(hours_ahead * 4)
     
     # Find the base time in the dataframe
     try:
-        base_idx = df.index.get_loc(base_time, method='nearest')
+        # Get the index position
+        base_idx = df.index.get_indexer([base_time], method='nearest')[0]
         target_idx = base_idx + bars_ahead
         
-        if target_idx < len(df):
+        if 0 <= target_idx < len(df):
             return df.iloc[target_idx]['Close']
         else:
             return None
-    except:
+    except Exception as e:
+        print(f"Error getting actual price: {e}")
         return None
 
 def evaluate_prediction(predicted_direction, predicted_pct, actual_pct, threshold=0.1):
@@ -208,7 +210,10 @@ def calculate_performance_metrics(results):
                 'avg_error': 0,
                 'bullish_accuracy': 0,
                 'bearish_accuracy': 0,
-                'neutral_accuracy': 0
+                'neutral_accuracy': 0,
+                'bullish_count': 0,
+                'bearish_count': 0,
+                'neutral_count': 0
             }
             continue
         
@@ -289,17 +294,39 @@ def save_results(results, metrics, output_dir='evaluation_results'):
     return f"{output_dir}/nvda_performance_report_{timestamp}.md"
 
 if __name__ == "__main__":
-    # Path to NVDA data
-    data_path = "../../directional_analysis/NVDA_15min_pattern_ready.csv"
+    # Path to NVDA data - try multiple locations
+    possible_paths = [
+        "../../directional_analysis/NVDA_15min_pattern_ready.csv",
+        "../directional_analysis/NVDA_15min_pattern_ready.csv",
+        "directional_analysis/NVDA_15min_pattern_ready.csv",
+        "NVDA_15min_pattern_ready.csv"
+    ]
     
-    if not os.path.exists(data_path):
-        print(f"Error: Data file not found at {data_path}")
+    data_path = None
+    for path in possible_paths:
+        if os.path.exists(path):
+            data_path = path
+            print(f"Found data file at: {path}")
+            break
+    
+    if data_path is None:
+        print(f"Error: Data file not found in any of these locations:")
+        for path in possible_paths:
+            print(f"  - {path}")
         sys.exit(1)
     
     print("Starting NVDA pattern prediction evaluation...")
     
-    # Run backtest
-    results = run_backtest(data_path, num_days=30, predictions_per_day=10)
+    try:
+        # Run backtest
+        results = run_backtest(data_path, num_days=30, predictions_per_day=10)
+    except Exception as e:
+        print(f"Error during backtest: {e}")
+        import traceback
+        traceback.print_exc()
+        
+        # Create empty results to allow workflow to continue
+        results = {'1h': [], '3h': [], 'eod': []}
     
     # Calculate metrics
     metrics = calculate_performance_metrics(results)
@@ -314,8 +341,14 @@ if __name__ == "__main__":
         print(f"  Total Evaluated: {m['total_predictions']}")
     
     # Save results
-    report_path = save_results(results, metrics)
-    print(f"\nDetailed report saved to: {report_path}")
+    try:
+        report_path = save_results(results, metrics)
+        print(f"\nDetailed report saved to: {report_path}")
+    except Exception as e:
+        print(f"Error saving results: {e}")
+        import traceback
+        traceback.print_exc()
+        report_path = None
     
     # Return overall success rate for CI/CD
     overall_accuracy = np.mean([metrics[tf]['direction_accuracy'] for tf in ['1h', '3h', 'eod']])

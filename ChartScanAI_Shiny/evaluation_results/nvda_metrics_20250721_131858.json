@@ -1,0 +1,29 @@
+{
+  "1h": {
+    "total_predictions": 0,
+    "direction_accuracy": 0,
+    "avg_error": 0,
+    "bullish_accuracy": 0,
+    "bearish_accuracy": 0,
+    "neutral_accuracy": 0
+  },
+  "3h": {
+    "total_predictions": 0,
+    "direction_accuracy": 0,
+    "avg_error": 0,
+    "bullish_accuracy": 0,
+    "bearish_accuracy": 0,
+    "neutral_accuracy": 0
+  },
+  "eod": {
+    "total_predictions": 318,
+    "direction_accuracy": 42.14,
+    "avg_error": 0.7659,
+    "bullish_accuracy": 22.22,
+    "bearish_accuracy": 20.0,
+    "neutral_accuracy": 49.79,
+    "bullish_count": 45,
+    "bearish_count": 40,
+    "neutral_count": 233
+  }
+}
