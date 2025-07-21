@@ -11,24 +11,24 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: write
-    
+
     steps:
     - name: Checkout repository
       uses: actions/checkout@v4
-      
+
     - name: Set up Python
       uses: actions/setup-python@v5
       with:
         python-version: '3.9'
-        
+
     - name: Install dependencies
       run: |
         pip install yfinance pandas
-        
+
     - name: Download latest NVDA data
       run: |
         mkdir -p data
-        python3 -c "
+        python3 - <<EOF
 import yfinance as yf
 import pandas as pd
 from datetime import datetime, timedelta
@@ -51,8 +51,8 @@ data = data[['Open', 'High', 'Low', 'Close', 'Volume']]
 data.to_csv('data/NVDA_15min_pattern_ready.csv')
 print(f'Downloaded {len(data)} rows of NVDA data')
 print(f'Date range: {data.index[0]} to {data.index[-1]}')
-"
-        
+EOF
+
     - name: Commit updated data
       uses: EndBug/add-and-commit@v9
       with:
