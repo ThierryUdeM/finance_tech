@@ -180,10 +180,15 @@ jobs:
         mkdir -p performance_history
         
         # Copy results to history with date
-        DATE=$(date +%Y%m%d)
-        cp -r evaluation_results/* performance_history/${DATE}_
+        DATE=$(date +%Y%m%d_%H%M%S)
+        mkdir -p performance_history/${DATE}
         
-        # Generate trend analysis (implement as needed)
+        if [ -d "ChartScanAI_Shiny/evaluation_results" ]; then
+          cp -r ChartScanAI_Shiny/evaluation_results/* performance_history/${DATE}/ || echo "No results to copy"
+        else
+          echo "No evaluation results found"
+        fi
+        
         echo "Performance tracking updated"
         
     - name: Commit performance history

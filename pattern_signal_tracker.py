@@ -53,7 +53,7 @@ class PatternSignalTracker:
             return None
         
         # Clean data
-        cleaned_data = pattern_scanner.clean_yf_data(data)
+        cleaned_data = pattern_scanner.clean_yfinance_data(data)
         
         # Define patterns to check
         patterns = {
