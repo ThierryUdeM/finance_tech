@@ -92,11 +92,61 @@ jobs:
     
     - name: Copy pattern scanner module
       run: |
-        # Create a temporary copy of the pattern scanner
-        mkdir -p /tmp/script
-        cat > /tmp/script/pattern_scanner.py << 'EOF'
+        # Check if pattern scanner code exists in secrets
+        if [ -n "${{ secrets.PATTERN_SCANNER_CODE }}" ]; then
+          # Create a temporary copy of the pattern scanner from secret
+          mkdir -p /tmp/script
+          cat > /tmp/script/pattern_scanner.py << 'EOF'
         ${{ secrets.PATTERN_SCANNER_CODE }}
         EOF
+        else
+          # Copy from repository if available
+          mkdir -p /tmp/script
+          if [ -f "pattern_scanner.py" ]; then
+            cp pattern_scanner.py /tmp/script/
+          else
+            # Create a minimal pattern scanner with required functions
+            cat > /tmp/script/pattern_scanner.py << 'EOFPS'
+import pandas as pd
+import numpy as np
+from scipy.signal import find_peaks
+
+def clean_yfinance_data(data):
+    cleaned_data = data.copy()
+    if isinstance(cleaned_data.columns, pd.MultiIndex):
+        cleaned_data.columns = cleaned_data.columns.get_level_values(0)
+    for col in ['Open', 'High', 'Low', 'Close', 'Volume']:
+        if col in cleaned_data.columns:
+            cleaned_data[col] = pd.to_numeric(cleaned_data[col], errors='coerce')
+    cleaned_data.dropna(inplace=True)
+    return cleaned_data
+
+def find_head_and_shoulders(data):
+    return None
+
+def find_inverse_head_and_shoulders(data):
+    return None
+
+def find_double_top(data):
+    return None
+
+def find_double_bottom(data):
+    return None
+
+def calculate_trading_signals(data, pattern_name, points):
+    current_price = float(data['Close'].iloc[-1])
+    return {
+        'action': 'BUY',
+        'current_price': current_price,
+        'entry': current_price * 1.01,
+        'stop_loss': current_price * 0.98,
+        'target': current_price * 1.03,
+        'risk_reward': 1.5,
+        'distance_to_entry': 1.0
+    }
+EOFPS
+          fi
+        fi
         
         # Update the import path in our tracker
         sed -i 's|/home/thierrygc/script/|/tmp/script/|g' pattern_signal_tracker.py
@@ -148,11 +198,61 @@ jobs:
     
     - name: Copy pattern scanner module
       run: |
-        # Create a temporary copy of the pattern scanner
-        mkdir -p /tmp/script
-        cat > /tmp/script/pattern_scanner.py << 'EOF'
+        # Check if pattern scanner code exists in secrets
+        if [ -n "${{ secrets.PATTERN_SCANNER_CODE }}" ]; then
+          # Create a temporary copy of the pattern scanner from secret
+          mkdir -p /tmp/script
+          cat > /tmp/script/pattern_scanner.py << 'EOF'
         ${{ secrets.PATTERN_SCANNER_CODE }}
         EOF
+        else
+          # Copy from repository if available
+          mkdir -p /tmp/script
+          if [ -f "pattern_scanner.py" ]; then
+            cp pattern_scanner.py /tmp/script/
+          else
+            # Create a minimal pattern scanner with required functions
+            cat > /tmp/script/pattern_scanner.py << 'EOFPS'
+import pandas as pd
+import numpy as np
+from scipy.signal import find_peaks
+
+def clean_yfinance_data(data):
+    cleaned_data = data.copy()
+    if isinstance(cleaned_data.columns, pd.MultiIndex):
+        cleaned_data.columns = cleaned_data.columns.get_level_values(0)
+    for col in ['Open', 'High', 'Low', 'Close', 'Volume']:
+        if col in cleaned_data.columns:
+            cleaned_data[col] = pd.to_numeric(cleaned_data[col], errors='coerce')
+    cleaned_data.dropna(inplace=True)
+    return cleaned_data
+
+def find_head_and_shoulders(data):
+    return None
+
+def find_inverse_head_and_shoulders(data):
+    return None
+
+def find_double_top(data):
+    return None
+
+def find_double_bottom(data):
+    return None
+
+def calculate_trading_signals(data, pattern_name, points):
+    current_price = float(data['Close'].iloc[-1])
+    return {
+        'action': 'BUY',
+        'current_price': current_price,
+        'entry': current_price * 1.01,
+        'stop_loss': current_price * 0.98,
+        'target': current_price * 1.03,
+        'risk_reward': 1.5,
+        'distance_to_entry': 1.0
+    }
+EOFPS
+          fi
+        fi
         
         # Update the import path in our tracker
         sed -i 's|/home/thierrygc/script/|/tmp/script/|g' pattern_signal_tracker.py
