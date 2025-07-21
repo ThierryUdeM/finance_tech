@@ -1,0 +1,244 @@
+name: Pattern Scanner and Evaluator
+
+on:
+  schedule:
+    # Run every 15 minutes during market hours (9:30 AM - 4:00 PM ET)
+    # GitHub Actions uses UTC time, so 9:30 AM ET = 2:30 PM UTC (during EST)
+    # and 1:30 PM UTC during EDT
+    - cron: '*/15 14-20 * * 1-5'  # Adjust based on daylight saving
+    - cron: '*/15 13-19 * * 1-5'  # For EDT
+  
+  workflow_dispatch:  # Allow manual trigger
+    inputs:
+      action:
+        description: 'Action to perform'
+        required: true
+        default: 'scan'
+        type: choice
+        options:
+          - scan
+          - evaluate
+          - both
+      ticker:
+        description: 'Stock ticker'
+        required: true
+        default: 'NVDA'
+        type: string
+
+jobs:
+  setup-environment:
+    runs-on: ubuntu-latest
+    outputs:
+      market-open: ${{ steps.check-market.outputs.is-open }}
+    
+    steps:
+    - name: Check if market is open
+      id: check-market
+      run: |
+        # Get current time in ET
+        CURRENT_HOUR=$(TZ='America/New_York' date +%H)
+        CURRENT_MIN=$(TZ='America/New_York' date +%M)
+        CURRENT_DAY=$(TZ='America/New_York' date +%u)
+        
+        # Check if it's a weekday (1-5)
+        if [ $CURRENT_DAY -gt 5 ]; then
+          echo "is-open=false" >> $GITHUB_OUTPUT
+          echo "Market is closed (weekend)"
+          exit 0
+        fi
+        
+        # Check if market hours (9:30 AM - 4:00 PM ET)
+        CURRENT_TIME=$((CURRENT_HOUR * 60 + CURRENT_MIN))
+        MARKET_OPEN=$((9 * 60 + 30))
+        MARKET_CLOSE=$((16 * 60))
+        
+        if [ $CURRENT_TIME -ge $MARKET_OPEN ] && [ $CURRENT_TIME -lt $MARKET_CLOSE ]; then
+          echo "is-open=true" >> $GITHUB_OUTPUT
+          echo "Market is open"
+        else
+          echo "is-open=false" >> $GITHUB_OUTPUT
+          echo "Market is closed"
+        fi
+
+  scan-patterns:
+    needs: setup-environment
+    if: |
+      (github.event_name == 'schedule' && needs.setup-environment.outputs.market-open == 'true') ||
+      (github.event_name == 'workflow_dispatch' && (github.event.inputs.action == 'scan' || github.event.inputs.action == 'both'))
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v3
+    
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.9'
+    
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install yfinance pandas numpy scipy mplfinance azure-storage-blob python-dotenv
+    
+    - name: Create config directory and .env file
+      run: |
+        mkdir -p config
+        cat > config/.env << EOF
+        AZURE_STORAGE_ACCOUNT=${{ secrets.AZURE_STORAGE_ACCOUNT }}
+        AZURE_STORAGE_KEY=${{ secrets.AZURE_STORAGE_KEY }}
+        AZURE_CONTAINER_NAME=${{ secrets.AZURE_CONTAINER_NAME }}
+        EOF
+    
+    - name: Copy pattern scanner module
+      run: |
+        # Create a temporary copy of the pattern scanner
+        mkdir -p /tmp/script
+        cat > /tmp/script/pattern_scanner.py << 'EOF'
+        ${{ secrets.PATTERN_SCANNER_CODE }}
+        EOF
+        
+        # Update the import path in our tracker
+        sed -i 's|/home/thierrygc/script/|/tmp/script/|g' pattern_signal_tracker.py
+    
+    - name: Run pattern scanner
+      run: |
+        TICKER="${{ github.event.inputs.ticker || 'NVDA' }}"
+        python pattern_signal_tracker.py scan --ticker $TICKER
+    
+    - name: Upload logs
+      if: always()
+      uses: actions/upload-artifact@v3
+      with:
+        name: scan-logs
+        path: |
+          *.log
+          signals_*.json
+
+  evaluate-signals:
+    needs: setup-environment
+    if: |
+      github.event_name == 'workflow_dispatch' && 
+      (github.event.inputs.action == 'evaluate' || github.event.inputs.action == 'both')
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v3
+    
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.9'
+    
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install yfinance pandas numpy scipy mplfinance azure-storage-blob python-dotenv
+    
+    - name: Create config directory and .env file
+      run: |
+        mkdir -p config
+        cat > config/.env << EOF
+        AZURE_STORAGE_ACCOUNT=${{ secrets.AZURE_STORAGE_ACCOUNT }}
+        AZURE_STORAGE_KEY=${{ secrets.AZURE_STORAGE_KEY }}
+        AZURE_CONTAINER_NAME=${{ secrets.AZURE_CONTAINER_NAME }}
+        EOF
+    
+    - name: Copy pattern scanner module
+      run: |
+        # Create a temporary copy of the pattern scanner
+        mkdir -p /tmp/script
+        cat > /tmp/script/pattern_scanner.py << 'EOF'
+        ${{ secrets.PATTERN_SCANNER_CODE }}
+        EOF
+        
+        # Update the import path in our tracker
+        sed -i 's|/home/thierrygc/script/|/tmp/script/|g' pattern_signal_tracker.py
+    
+    - name: Evaluate signals
+      run: |
+        TICKER="${{ github.event.inputs.ticker || 'NVDA' }}"
+        python pattern_signal_tracker.py evaluate --ticker $TICKER --hours 48
+    
+    - name: Upload evaluation results
+      if: always()
+      uses: actions/upload-artifact@v3
+      with:
+        name: evaluation-results
+        path: |
+          *.log
+          evaluation_*.json
+
+  daily-report:
+    if: github.event_name == 'schedule'
+    runs-on: ubuntu-latest
+    # Run at 4:30 PM ET (after market close)
+    
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v3
+    
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.9'
+    
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install yfinance pandas numpy scipy mplfinance azure-storage-blob python-dotenv matplotlib
+    
+    - name: Create config directory and .env file
+      run: |
+        mkdir -p config
+        cat > config/.env << EOF
+        AZURE_STORAGE_ACCOUNT=${{ secrets.AZURE_STORAGE_ACCOUNT }}
+        AZURE_STORAGE_KEY=${{ secrets.AZURE_STORAGE_KEY }}
+        AZURE_CONTAINER_NAME=${{ secrets.AZURE_CONTAINER_NAME }}
+        EOF
+    
+    - name: Generate daily report
+      run: |
+        python -c "
+        from pattern_signal_tracker import PatternSignalTracker
+        import json
+        
+        tracker = PatternSignalTracker()
+        
+        # Evaluate multiple tickers
+        tickers = ['NVDA', 'AAPL', 'MSFT', 'GOOGL', 'TSLA']
+        results = []
+        
+        for ticker in tickers:
+            stats = tracker.evaluate_signals(ticker, hours=24)
+            if stats:
+                results.append({
+                    'ticker': ticker,
+                    'win_rate': stats['win_rate'],
+                    'total_signals': stats['total_signals'],
+                    'completed': stats['hit_target'] + stats['hit_stop']
+                })
+        
+        # Create summary
+        if results:
+            avg_win_rate = sum(r['win_rate'] for r in results) / len(results)
+            print(f'Daily Summary:')
+            print(f'Average Win Rate: {avg_win_rate:.2f}%')
+            for r in results:
+                print(f'{r[\"ticker\"]}: {r[\"win_rate\"]}% ({r[\"completed\"]} completed)')
+        "
+    
+    - name: Create issue with daily report
+      if: success()
+      uses: actions/github-script@v6
+      with:
+        script: |
+          const date = new Date().toISOString().split('T')[0];
+          github.rest.issues.create({
+            owner: context.repo.owner,
+            repo: context.repo.repo,
+            title: `Pattern Scanner Daily Report - ${date}`,
+            body: 'Check the workflow logs for detailed results.',
+            labels: ['automated', 'daily-report']
+          });

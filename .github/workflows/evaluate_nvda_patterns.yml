@@ -54,7 +54,13 @@ jobs:
         echo ""
         echo "Downloading today's NVDA intraday data from yfinance..."
         pip install yfinance
-        python3 << 'EOF'
+        
+        # Use the existing download script
+        if [ -f "ChartScanAI_Shiny/download_intraday_data.py" ]; then
+          python3 ChartScanAI_Shiny/download_intraday_data.py
+        else
+          echo "Download script not found, creating inline version..."
+          python3 -c "
 import yfinance as yf
 import pandas as pd
 from datetime import datetime, timedelta, time
@@ -62,7 +68,7 @@ import json
 import os
 
 # Download today's NVDA intraday data
-ticker = yf.Ticker("NVDA")
+ticker = yf.Ticker('NVDA')
 
 # Get today's data (or last trading day if market is closed)
 today = datetime.now()
@@ -77,7 +83,7 @@ start_date = today - timedelta(days=5)
 
 try:
     # Download intraday data
-    intraday_data = ticker.history(start=start_date, end=end_date, interval="15m")
+    intraday_data = ticker.history(start=start_date, end=end_date, interval='15m')
     
     if len(intraday_data) > 0:
         # Filter to get only today's data (last trading day)
@@ -89,9 +95,9 @@ try:
         
         # Save today's data
         today_data.to_csv('directional_analysis/NVDA_intraday_current.csv')
-        print(f"Downloaded {len(today_data)} bars of today's NVDA data")
-        print(f"Today's data range: {today_data.index[0]} to {today_data.index[-1]}")
-        print(f"Current price: ${today_data['Close'].iloc[-1]:.2f}")
+        print(f'Downloaded {len(today_data)} bars of today\\'s NVDA data')
+        print(f'Today\\'s data range: {today_data.index[0]} to {today_data.index[-1]}')
+        print(f'Current price: ${today_data[\"Close\"].iloc[-1]:.2f}')
         
         # Save current state for predictions
         current_state = {
@@ -119,18 +125,19 @@ try:
         if len(new_bars) > 0:
             combined = pd.concat([historical, new_bars])
             combined.to_csv('directional_analysis/NVDA_15min_pattern_ready.csv')
-            print(f"Added {len(new_bars)} new bars to historical data")
-            print(f"Total historical bars: {len(combined)}")
+            print(f'Added {len(new_bars)} new bars to historical data')
+            print(f'Total historical bars: {len(combined)}')
         else:
-            print("No new bars to add to historical data")
+            print('No new bars to add to historical data')
             
     else:
-        print("Warning: Could not download intraday data from yfinance")
+        print('Warning: Could not download intraday data from yfinance')
         
 except Exception as e:
-    print(f"Error downloading intraday data: {e}")
-    print("Will proceed with existing data")
-EOF
+    print(f'Error downloading intraday data: {e}')
+    print('Will proceed with existing data')
+"
+        fi
         
         # Verify data exists
         echo ""
