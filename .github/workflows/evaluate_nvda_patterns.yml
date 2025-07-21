@@ -38,58 +38,137 @@ jobs:
         mkdir -p directional_analysis
         mkdir -p ChartScanAI_Shiny/evaluation_results
         
-        # Create a sample NVDA data file for testing with more data points
-        # In production, replace this with actual data download
-        python3 -c "
+        # Step 1: Copy historical pattern library data (2.5 years for pattern matching)
+        if [ -f "data/NVDA_15min_pattern_ready.csv" ]; then
+          echo "✓ Using historical NVDA pattern library from repository"
+          cp data/NVDA_15min_pattern_ready.csv directional_analysis/
+          echo "Historical data stats:"
+          wc -l directional_analysis/NVDA_15min_pattern_ready.csv
+        else
+          echo "✗ Historical pattern data not found at data/NVDA_15min_pattern_ready.csv"
+          echo "The pattern matching system needs historical data to find similar patterns"
+          exit 1
+        fi
+        
+        # Step 2: Download current intraday data from yfinance
+        echo ""
+        echo "Downloading today's NVDA intraday data from yfinance..."
+        pip install yfinance
+        python3 << 'EOF'
+import yfinance as yf
 import pandas as pd
-import numpy as np
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, time
+import json
+import os
 
-# Generate sample data
-dates = pd.date_range(end='2025-07-18 20:00:00', periods=100, freq='15min')
-base_price = 172.4
-prices = base_price + np.cumsum(np.random.randn(100) * 0.5)
+# Download today's NVDA intraday data
+ticker = yf.Ticker("NVDA")
 
-df = pd.DataFrame({
-    'timestamp': dates,
-    'Open': prices + np.random.rand(100) * 0.2,
-    'High': prices + np.random.rand(100) * 0.5,
-    'Low': prices - np.random.rand(100) * 0.5,
-    'Close': prices,
-    'Volume': np.random.randint(100000, 1000000, 100)
-})
+# Get today's data (or last trading day if market is closed)
+today = datetime.now()
+if today.weekday() >= 5:  # Weekend
+    # Go back to Friday
+    days_back = today.weekday() - 4
+    today = today - timedelta(days=days_back)
 
-df.to_csv('directional_analysis/NVDA_15min_pattern_ready.csv', index=False)
-print(f'Created sample data with {len(df)} rows')
-        "
+# Download 5 days to ensure we get the latest trading day
+end_date = today + timedelta(days=1)
+start_date = today - timedelta(days=5)
+
+try:
+    # Download intraday data
+    intraday_data = ticker.history(start=start_date, end=end_date, interval="15m")
+    
+    if len(intraday_data) > 0:
+        # Filter to get only today's data (last trading day)
+        today_data = intraday_data[intraday_data.index.date == intraday_data.index.date[-1]]
         
-        # Note: In production, download real data:
-        # curl -o directional_analysis/NVDA_15min_pattern_ready.csv ${{ secrets.DATA_URL }}
+        # Format for the evaluation system
+        today_data.index.name = 'timestamp'
+        today_data = today_data[['Open', 'High', 'Low', 'Close', 'Volume']]
         
-        echo "Created sample NVDA data for testing"
+        # Save today's data
+        today_data.to_csv('directional_analysis/NVDA_intraday_current.csv')
+        print(f"Downloaded {len(today_data)} bars of today's NVDA data")
+        print(f"Today's data range: {today_data.index[0]} to {today_data.index[-1]}")
+        print(f"Current price: ${today_data['Close'].iloc[-1]:.2f}")
+        
+        # Save current state for predictions
+        current_state = {
+            'timestamp': str(today_data.index[-1]),
+            'current_price': float(today_data['Close'].iloc[-1]),
+            'bars_today': len(today_data),
+            'market_open': str(today_data.index[0]),
+            'last_update': str(datetime.now())
+        }
+        
+        with open('directional_analysis/current_state.json', 'w') as f:
+            json.dump(current_state, f, indent=2)
+            
+        # Also append today's completed bars to historical data
+        # This keeps the pattern library up to date
+        historical = pd.read_csv('directional_analysis/NVDA_15min_pattern_ready.csv', 
+                                index_col='timestamp', parse_dates=True)
+        
+        # Get the last timestamp in historical data
+        last_historical = historical.index[-1]
+        
+        # Only append bars that are after the last historical timestamp
+        new_bars = today_data[today_data.index > last_historical]
+        
+        if len(new_bars) > 0:
+            combined = pd.concat([historical, new_bars])
+            combined.to_csv('directional_analysis/NVDA_15min_pattern_ready.csv')
+            print(f"Added {len(new_bars)} new bars to historical data")
+            print(f"Total historical bars: {len(combined)}")
+        else:
+            print("No new bars to add to historical data")
+            
+    else:
+        print("Warning: Could not download intraday data from yfinance")
+        
+except Exception as e:
+    print(f"Error downloading intraday data: {e}")
+    print("Will proceed with existing data")
+EOF
+        
+        # Verify data exists
+        echo ""
+        echo "Final data verification:"
+        if [ -f "directional_analysis/NVDA_15min_pattern_ready.csv" ]; then
+          echo "✓ NVDA pattern data ready"
+          echo "Data preview:"
+          head -5 directional_analysis/NVDA_15min_pattern_ready.csv
+          tail -5 directional_analysis/NVDA_15min_pattern_ready.csv
+          wc -l directional_analysis/NVDA_15min_pattern_ready.csv
+        else
+          echo "✗ Failed to prepare NVDA data"
+          exit 1
+        fi
         
     - name: Run evaluation
       id: evaluate
       run: |
         cd ChartScanAI_Shiny
+        
+        # Run the intraday evaluation (makes predictions and evaluates past ones)
+        python evaluate_intraday_predictions.py
+        
+        # Store exit code
+        EVAL_EXIT_CODE=$?
+        
+        # Also run the backtest evaluation for historical performance
+        echo ""
+        echo "Running historical backtest..."
         python evaluate_nvda_patterns.py || true
         
         # List contents to debug
-        echo "Current directory contents:"
-        ls -la
-        echo "Checking for evaluation_results:"
+        echo ""
+        echo "Evaluation results:"
         ls -la evaluation_results/ || echo "No evaluation_results directory"
         
-        # Ensure some results exist for artifact upload
-        if [ ! -d "evaluation_results" ] || [ -z "$(ls -A evaluation_results)" ]; then
-          echo "Creating sample results for artifact upload"
-          mkdir -p evaluation_results
-          echo "{\"1h\": {\"direction_accuracy\": 50, \"total_predictions\": 10}}" > evaluation_results/nvda_metrics_sample.json
-          echo "Sample evaluation completed" > evaluation_results/sample_report.md
-        fi
-        
-        # Capture the exit code
-        echo "exit_code=$?" >> $GITHUB_OUTPUT
+        # Use the intraday evaluation exit code
+        echo "exit_code=${EVAL_EXIT_CODE}" >> $GITHUB_OUTPUT
         
     - name: Upload evaluation results
       uses: actions/upload-artifact@v4

@@ -1,0 +1,169 @@
+name: NVDA Intraday Pattern Monitor
+
+on:
+  schedule:
+    # Run every 15 minutes during market hours (9:30 AM - 4:00 PM EST)
+    # In UTC: 2:30 PM - 9:00 PM (14:30 - 21:00)
+    - cron: '*/15 14-20 * * 1-5'  # Every 15 min, 14:00-20:59 UTC, Mon-Fri
+    - cron: '0 21 * * 1-5'         # Final run at 21:00 UTC (4 PM EST)
+  workflow_dispatch:  # Allow manual trigger
+
+jobs:
+  monitor:
+    runs-on: ubuntu-latest
+    # Only run during US market hours
+    if: github.event_name == 'workflow_dispatch' || (github.event.schedule == '*/15 14-20 * * 1-5' || github.event.schedule == '0 21 * * 1-5')
+    
+    permissions:
+      contents: write
+      issues: write
+    
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+      with:
+        token: ${{ secrets.GITHUB_TOKEN }}
+        
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.9'
+        
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install pandas numpy yfinance
+        
+    - name: Check market status
+      id: market_check
+      run: |
+        python3 << 'EOF'
+import datetime
+import sys
+
+# Get current time in EST
+now_utc = datetime.datetime.utcnow()
+now_est = now_utc - datetime.timedelta(hours=5)  # EST is UTC-5
+
+# Check if market is open (9:30 AM - 4:00 PM EST, Mon-Fri)
+market_open = datetime.time(9, 30)
+market_close = datetime.time(16, 0)
+
+is_weekday = now_est.weekday() < 5
+is_market_hours = market_open <= now_est.time() <= market_close
+
+if is_weekday and is_market_hours:
+    print("Market is OPEN")
+    print(f"Current time EST: {now_est.strftime('%Y-%m-%d %H:%M:%S')}")
+    sys.exit(0)
+else:
+    print("Market is CLOSED")
+    print(f"Current time EST: {now_est.strftime('%Y-%m-%d %H:%M:%S')}")
+    sys.exit(1)
+EOF
+        echo "market_open=$?" >> $GITHUB_OUTPUT
+        
+    - name: Pull latest prediction history
+      if: steps.market_check.outputs.market_open == '0'
+      run: |
+        # Pull any changes to avoid conflicts
+        git pull origin main || true
+        
+    - name: Prepare data directories
+      if: steps.market_check.outputs.market_open == '0'
+      run: |
+        mkdir -p directional_analysis
+        mkdir -p ChartScanAI_Shiny/evaluation_results
+        
+        # Copy historical data
+        if [ -f "data/NVDA_15min_pattern_ready.csv" ]; then
+          cp data/NVDA_15min_pattern_ready.csv directional_analysis/
+        fi
+        
+    - name: Download current intraday data
+      if: steps.market_check.outputs.market_open == '0'
+      run: |
+        python3 ChartScanAI_Shiny/download_intraday_data.py || echo "Using cached data"
+        
+    - name: Generate and evaluate predictions
+      if: steps.market_check.outputs.market_open == '0'
+      run: |
+        cd ChartScanAI_Shiny
+        
+        # Run intraday evaluation
+        python evaluate_intraday_predictions.py
+        
+        # Show current prediction
+        echo ""
+        echo "Latest Prediction Summary:"
+        if [ -f "evaluation_results/nvda_prediction_history.json" ]; then
+          python3 << 'EOF'
+import json
+with open('evaluation_results/nvda_prediction_history.json', 'r') as f:
+    history = json.load(f)
+    if history:
+        latest = history[-1]
+        print(f"Time: {latest['timestamp']}")
+        print(f"Price: ${latest['current_price']:.2f}")
+        print(f"1H: {latest['pred_1h_pct']:+.3f}% ({latest['pred_1h_dir']})")
+        print(f"3H: {latest['pred_3h_pct']:+.3f}% ({latest['pred_3h_dir']})")
+        print(f"EOD: {latest['pred_eod_pct']:+.3f}% ({latest['pred_eod_dir']})")
+EOF
+        fi
+        
+    - name: Commit prediction history
+      if: steps.market_check.outputs.market_open == '0'
+      run: |
+        git config --local user.email "action@github.com"
+        git config --local user.name "GitHub Action"
+        
+        # Add evaluation results
+        git add ChartScanAI_Shiny/evaluation_results/*.json || true
+        git add ChartScanAI_Shiny/evaluation_results/*.md || true
+        
+        # Commit with timestamp
+        TIMESTAMP=$(date -u +"%Y-%m-%d %H:%M UTC")
+        git commit -m "Update NVDA predictions - ${TIMESTAMP}" || echo "No changes to commit"
+        
+        # Push changes
+        git push || echo "No changes to push"
+        
+    - name: Create alert for significant predictions
+      if: steps.market_check.outputs.market_open == '0' && failure()
+      uses: actions/github-script@v6
+      with:
+        script: |
+          // Parse latest prediction
+          const fs = require('fs');
+          const historyPath = 'ChartScanAI_Shiny/evaluation_results/nvda_prediction_history.json';
+          
+          if (fs.existsSync(historyPath)) {
+            const history = JSON.parse(fs.readFileSync(historyPath, 'utf8'));
+            const latest = history[history.length - 1];
+            
+            // Check for significant predictions (>1% move)
+            const significant = Math.abs(latest.pred_1h_pct) > 1.0 || 
+                               Math.abs(latest.pred_3h_pct) > 1.0 || 
+                               Math.abs(latest.pred_eod_pct) > 1.0;
+            
+            if (significant) {
+              await github.rest.issues.create({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                title: `NVDA Alert: Significant price movement predicted`,
+                body: `The pattern prediction system has identified a significant potential move:
+                
+                **Current Price**: $${latest.current_price.toFixed(2)}
+                
+                **Predictions**:
+                - 1 Hour: ${latest.pred_1h_pct.toFixed(3)}% (${latest.pred_1h_dir})
+                - 3 Hour: ${latest.pred_3h_pct.toFixed(3)}% (${latest.pred_3h_dir})
+                - EOD: ${latest.pred_eod_pct.toFixed(3)}% (${latest.pred_eod_dir})
+                
+                Confidence: ${latest.confidence}
+                
+                [View Details](${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId})`,
+                labels: ['alert', 'nvda-prediction']
+              });
+            }
+          }

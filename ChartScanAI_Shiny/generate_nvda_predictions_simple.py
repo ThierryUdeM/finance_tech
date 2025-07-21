@@ -2,6 +2,10 @@
 """
 Generate NVDA predictions based on historical volatility patterns
 Uses real NVDA data to calculate directional predictions
+
+Data Usage:
+1. Historical data (2.5 years) - Used as pattern library to find similar shapes
+2. Current/recent data - The most recent bars used to find matches in historical data
 """
 import pandas as pd
 import numpy as np

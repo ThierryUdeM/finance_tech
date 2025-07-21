@@ -1,0 +1,149 @@
+name: Evaluate NVDA Pattern Predictions
+
+on:
+  schedule:
+    # Run daily at 6 PM EST (11 PM UTC) after market close
+    - cron: '0 23 * * *'
+  workflow_dispatch:  # Allow manual trigger
+  push:
+    paths:
+      - 'ChartScanAI_Shiny/evaluate_nvda_patterns.py'
+      - 'directional_analysis/generate_nvda_predictions_simple.py'
+      - '.github/workflows/evaluate_nvda_patterns.yml'
+
+jobs:
+  evaluate:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      issues: write
+    
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+      
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.9'
+        
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install pandas numpy
+        
+    - name: Prepare directories
+      run: |
+        # Create output directory
+        mkdir -p ChartScanAI_Shiny/evaluation_results
+        
+        # Check if data exists
+        if [ -f "directional_analysis/NVDA_15min_pattern_ready.csv" ]; then
+          echo "✓ NVDA data found in repository"
+          head -5 directional_analysis/NVDA_15min_pattern_ready.csv
+        else
+          echo "✗ NVDA data not found - please add to repository"
+          exit 1
+        fi
+        
+    - name: Run evaluation
+      id: evaluate
+      run: |
+        cd ChartScanAI_Shiny
+        python evaluate_nvda_patterns.py
+        
+        # Capture the exit code
+        echo "exit_code=$?" >> $GITHUB_OUTPUT
+        
+    - name: Upload evaluation results
+      uses: actions/upload-artifact@v4
+      if: always()
+      with:
+        name: evaluation-results-${{ github.run_number }}
+        path: |
+          ChartScanAI_Shiny/evaluation_results/
+          
+    - name: Parse performance metrics
+      if: always()
+      run: |
+        # Find the latest metrics file
+        METRICS_FILE=$(ls -t ChartScanAI_Shiny/evaluation_results/nvda_metrics_*.json | head -1)
+        
+        if [ -f "$METRICS_FILE" ]; then
+          echo "## Performance Summary" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          
+          # Extract metrics using Python
+          python << EOF
+        import json
+        
+        with open("$METRICS_FILE", 'r') as f:
+            metrics = json.load(f)
+        
+        print("| Timeframe | Direction Accuracy | Avg Error | Predictions |")
+        print("|-----------|-------------------|-----------|-------------|")
+        
+        for tf in ['1h', '3h', 'eod']:
+            m = metrics[tf]
+            print(f"| {tf.upper()} | {m['direction_accuracy']}% | {m['avg_error']}% | {m['total_predictions']} |")
+        
+        # Calculate overall accuracy
+        overall = sum(metrics[tf]['direction_accuracy'] for tf in ['1h', '3h', 'eod']) / 3
+        print(f"\n**Overall Direction Accuracy: {overall:.2f}%**")
+        EOF
+          
+        fi >> $GITHUB_STEP_SUMMARY
+        
+    - name: Create issue if performance drops
+      if: failure()
+      uses: actions/github-script@v6
+      with:
+        script: |
+          const issue = await github.rest.issues.create({
+            owner: context.repo.owner,
+            repo: context.repo.repo,
+            title: 'NVDA Pattern Prediction Performance Below Threshold',
+            body: `The NVDA pattern prediction evaluation failed the performance threshold.
+            
+            Check the [workflow run](${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}) for details.
+            
+            This might indicate:
+            - Changes in market behavior
+            - Issues with the prediction algorithm
+            - Data quality problems`,
+            labels: ['performance', 'automated']
+          });
+
+  track-performance:
+    needs: evaluate
+    runs-on: ubuntu-latest
+    if: always()
+    
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+      
+    - name: Download artifacts
+      uses: actions/download-artifact@v4
+      with:
+        name: evaluation-results-${{ github.run_number }}
+        path: ./evaluation_results
+        
+    - name: Update performance tracking
+      run: |
+        # Create performance history directory
+        mkdir -p performance_history
+        
+        # Copy results to history with date
+        DATE=$(date +%Y%m%d)
+        cp -r evaluation_results/* performance_history/${DATE}_
+        
+        # Generate trend analysis (implement as needed)
+        echo "Performance tracking updated"
+        
+    - name: Commit performance history
+      uses: EndBug/add-and-commit@v9
+      with:
+        add: 'performance_history'
+        message: 'Update NVDA pattern prediction performance history'
+        default_author: github_actions
