@@ -11,51 +11,28 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: write
-
+    
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: '3.9'
-
-      - name: Install dependencies
-        run: |
-          pip install yfinance pandas
-
-      - name: Download latest NVDA data
-        run: |
-          mkdir -p data
-          python3 - <<EOF
-import yfinance as yf
-import pandas as pd
-from datetime import datetime, timedelta
-
-# Download NVDA data
-ticker = yf.Ticker('NVDA')
-
-# Get 2 years of 15-minute data
-end_date = datetime.now()
-start_date = end_date - timedelta(days=730)
-
-# Download data
-data = ticker.history(start=start_date, end=end_date, interval='15m')
-
-# Format for your system
-data.index.name = 'timestamp'
-data = data[['Open', 'High', 'Low', 'Close', 'Volume']]
-
-# Save to file
-data.to_csv('data/NVDA_15min_pattern_ready.csv')
-print(f'Downloaded {len(data)} rows of NVDA data')
-print(f'Date range: {data.index[0]} to {data.index[-1]}')
-EOF
-
-      - name: Commit updated data
-        uses: EndBug/add-and-commit@v9
-        with:
-          add: 'data/NVDA_15min_pattern_ready.csv'
-          message: 'Update NVDA historical data'
-          default_author: github_actions
+    - name: Checkout repository
+      uses: actions/checkout@v4
+      
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.9'
+        
+    - name: Install dependencies
+      run: |
+        pip install yfinance pandas
+        
+    - name: Download latest NVDA data
+      run: |
+        mkdir -p data
+        python3 download_nvda_historical.py
+        
+    - name: Commit updated data
+      uses: EndBug/add-and-commit@v9
+      with:
+        add: 'data/NVDA_15min_pattern_ready.csv'
+        message: 'Update NVDA historical data'
+        default_author: github_actions
