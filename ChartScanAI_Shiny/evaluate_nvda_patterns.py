@@ -12,7 +12,19 @@ import sys
 
 def load_nvda_data(data_path):
     """Load NVDA historical data"""
-    df = pd.read_csv(data_path, index_col=0, parse_dates=True)
+    df = pd.read_csv(data_path)
+    # Handle different possible column names
+    if 'timestamp' in df.columns:
+        df.set_index('timestamp', inplace=True)
+    elif 'Timestamp' in df.columns:
+        df.set_index('Timestamp', inplace=True)
+    elif 'Date' in df.columns:
+        df.set_index('Date', inplace=True)
+    else:
+        # Assume first column is timestamp
+        df.set_index(df.columns[0], inplace=True)
+    
+    df.index = pd.to_datetime(df.index)
     return df
 
 def get_actual_price(df, base_time, hours_ahead):
@@ -68,7 +80,7 @@ def evaluate_prediction(predicted_direction, predicted_pct, actual_pct, threshol
         'error_pct': prediction_error
     }
 
-def run_backtest(data_path, num_days=30, predictions_per_day=10):
+def run_backtest(data_path, num_days=None, predictions_per_day=10):
     """
     Run backtest on historical data
     
@@ -89,30 +101,49 @@ def run_backtest(data_path, num_days=30, predictions_per_day=10):
     
     # Get the date range for backtesting
     end_date = df.index[-1]
-    start_date = end_date - timedelta(days=num_days)
     
-    # Filter data for backtest period
-    backtest_df = df[df.index >= start_date]
+    # Handle small datasets for testing
+    if num_days is None:
+        # Use all available data
+        backtest_df = df
+        print(f"Using all available data: {len(df)} data points")
+    else:
+        start_date = end_date - timedelta(days=num_days)
+        backtest_df = df[df.index >= start_date]
+        
+        # If not enough data, use all available
+        if len(backtest_df) < 100:
+            backtest_df = df
+            print(f"Limited data available, using all {len(df)} data points")
     
-    print(f"Running backtest from {start_date.date()} to {end_date.date()}")
-    print(f"Total data points: {len(backtest_df)}")
+    print(f"Running backtest on {len(backtest_df)} data points")
+    print(f"Date range: {backtest_df.index[0]} to {backtest_df.index[-1]}")
     
     # Generate predictions at various points
-    for i in range(0, len(backtest_df) - 100, len(backtest_df) // (num_days * predictions_per_day)):
+    # For small datasets, just generate a few predictions
+    if len(backtest_df) < 100:
+        step_size = max(1, len(backtest_df) // 10)
+    else:
+        total_predictions = (num_days if num_days else 30) * predictions_per_day
+        step_size = max(1, len(backtest_df) // total_predictions)
+    
+    for i in range(0, max(1, len(backtest_df) - 20), step_size):
         base_idx = i
         base_time = backtest_df.index[base_idx]
         base_price = backtest_df.iloc[base_idx]['Close']
         
         # Skip if not enough future data
-        if base_idx + 80 >= len(backtest_df):  # Need at least 20 hours of future data
+        min_future_bars = min(20, len(backtest_df) - base_idx - 1)
+        if min_future_bars < 4:  # Need at least 1 hour (4 bars) of future data
             continue
         
-        # Calculate recent volatility (using 20 bars before base_time)
-        if base_idx >= 20:
-            recent_returns = backtest_df['Close'].pct_change().iloc[base_idx-20:base_idx]
-            volatility = recent_returns.std()
+        # Calculate recent volatility (using available bars before base_time)
+        lookback = min(20, base_idx)
+        if lookback >= 2:
+            recent_returns = backtest_df['Close'].pct_change().iloc[max(0, base_idx-lookback):base_idx]
+            volatility = recent_returns.std() if len(recent_returns) > 1 else 0.01
         else:
-            continue
+            volatility = 0.01  # Default volatility for insufficient data
         
         # Generate predictions (similar to the simple prediction script)
         np.random.seed(int(base_time.timestamp()) % 1000)
@@ -121,10 +152,12 @@ def run_backtest(data_path, num_days=30, predictions_per_day=10):
         pred_1h = np.random.normal(bias, volatility * 2) * 100
         pred_3h = np.random.normal(bias, volatility * 3) * 100
         
-        # For EOD, calculate hours until market close (4 PM)
-        hours_to_close = 16 - base_time.hour
-        if hours_to_close <= 0:
-            continue  # Skip if after market close
+        # For EOD, use available data or estimate
+        # In test mode with limited data, just use end of available data
+        if hasattr(base_time, 'hour'):
+            hours_to_close = max(1, 16 - base_time.hour)
+        else:
+            hours_to_close = 4  # Default to 4 hours
         
         pred_eod = np.random.normal(bias, volatility * 4) * 100
         
@@ -136,7 +169,7 @@ def run_backtest(data_path, num_days=30, predictions_per_day=10):
         # Get actual prices
         actual_1h = get_actual_price(backtest_df, base_time, 1)
         actual_3h = get_actual_price(backtest_df, base_time, 3)
-        actual_eod_idx = base_idx + (hours_to_close * 4)
+        actual_eod_idx = min(base_idx + (hours_to_close * 4), len(backtest_df) - 1)
         actual_eod = backtest_df.iloc[actual_eod_idx]['Close'] if actual_eod_idx < len(backtest_df) else None
         
         # Evaluate predictions

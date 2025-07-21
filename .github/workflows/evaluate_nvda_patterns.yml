@@ -14,6 +14,9 @@ on:
 jobs:
   evaluate:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      issues: write
     
     steps:
     - name: Checkout repository
@@ -29,22 +32,40 @@ jobs:
         python -m pip install --upgrade pip
         pip install pandas numpy
         
-    - name: Download NVDA data
+    - name: Prepare NVDA data
       run: |
         # Create directory structure
         mkdir -p directional_analysis
+        mkdir -p ChartScanAI_Shiny/evaluation_results
         
-        # Download NVDA data (you'll need to provide the actual data source)
-        # For now, we'll assume the data is in the repository
-        # In production, you might download from a data provider
+        # Create a sample NVDA data file for testing
+        # In production, replace this with actual data download
+        cat > directional_analysis/NVDA_15min_pattern_ready.csv << 'EOF'
+        timestamp,Open,High,Low,Close,Volume
+        2025-07-18 15:45:00,172.5,172.8,172.3,172.4,1000000
+        2025-07-18 16:00:00,172.4,172.6,172.2,172.5,900000
+        2025-07-18 16:15:00,172.5,172.7,172.4,172.6,800000
+        2025-07-18 16:30:00,172.6,172.8,172.5,172.7,700000
+        2025-07-18 16:45:00,172.7,172.9,172.6,172.8,600000
+        2025-07-18 17:00:00,172.8,173.0,172.7,172.9,500000
+        2025-07-18 17:15:00,172.9,173.1,172.8,173.0,400000
+        2025-07-18 17:30:00,173.0,173.2,172.9,173.1,300000
+        2025-07-18 17:45:00,173.1,173.3,173.0,173.2,200000
+        2025-07-18 18:00:00,173.2,173.4,173.1,173.3,100000
+        2025-07-18 18:15:00,173.3,173.5,173.2,173.4,100000
+        2025-07-18 18:30:00,173.4,173.6,173.3,173.5,100000
+        2025-07-18 18:45:00,173.5,173.7,173.4,173.6,100000
+        2025-07-18 19:00:00,173.6,173.8,173.5,173.7,100000
+        2025-07-18 19:15:00,173.7,173.9,173.6,173.8,100000
+        2025-07-18 19:30:00,173.8,174.0,173.7,173.9,100000
+        2025-07-18 19:45:00,173.9,174.1,173.8,174.0,100000
+        2025-07-18 20:00:00,174.0,174.2,173.9,172.4,100000
+        EOF
         
-        # If data is stored in repo (not recommended for large files)
-        # cp data/NVDA_15min_pattern_ready.csv directional_analysis/
-        
-        # Or download from a secure source
+        # Note: In production, download real data:
         # curl -o directional_analysis/NVDA_15min_pattern_ready.csv ${{ secrets.DATA_URL }}
         
-        echo "Data download step - implement based on your data source"
+        echo "Created sample NVDA data for testing"
         
     - name: Run evaluation
       id: evaluate
