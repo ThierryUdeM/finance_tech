@@ -28,7 +28,7 @@ jobs:
     - name: Download latest NVDA data
       run: |
         mkdir -p data
-        python3 << 'EOF'
+        cat > download_data.py << 'SCRIPT'
 import yfinance as yf
 import pandas as pd
 from datetime import datetime, timedelta
@@ -51,7 +51,9 @@ data = data[['Open', 'High', 'Low', 'Close', 'Volume']]
 data.to_csv('data/NVDA_15min_pattern_ready.csv')
 print(f"Downloaded {len(data)} rows of NVDA data")
 print(f"Date range: {data.index[0]} to {data.index[-1]}")
-EOF
+SCRIPT
+        python3 download_data.py
+        rm download_data.py
         
     - name: Commit updated data
       uses: EndBug/add-and-commit@v9
