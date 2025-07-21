@@ -248,7 +248,48 @@ def calculate_trading_signals(data, pattern_name, points):
     signals['current_price'] = round(current_price, 2)
     signals['distance_to_entry'] = round(abs(current_price - signals['entry']) / current_price * 100, 2)
     
+    # Calculate pattern confidence
+    signals['confidence'] = calculate_pattern_confidence(data, pattern_name, points)
+    
     return signals
+
+def calculate_pattern_confidence(data, pattern_name, points):
+    """Calculate confidence score for the pattern (0-100)"""
+    confidence = 50  # Base confidence
+    
+    if pattern_name in ["Double Top", "Double Bottom"]:
+        if pattern_name == "Double Top":
+            p1, p2, valley = points
+            # Check how similar the two peaks are
+            peak_diff = abs(data['High'].iloc[int(p1)] - data['High'].iloc[int(p2)])
+            avg_peak = (data['High'].iloc[int(p1)] + data['High'].iloc[int(p2)]) / 2
+            symmetry_score = 1 - (peak_diff / avg_peak)
+        else:  # Double Bottom
+            t1, t2, peak = points
+            # Check how similar the two troughs are
+            trough_diff = abs(data['Low'].iloc[int(t1)] - data['Low'].iloc[int(t2)])
+            avg_trough = (data['Low'].iloc[int(t1)] + data['Low'].iloc[int(t2)]) / 2
+            symmetry_score = 1 - (trough_diff / avg_trough)
+        
+        # Add confidence based on pattern symmetry
+        confidence += symmetry_score * 30
+        
+        # Add confidence based on volume (if available)
+        if 'Volume' in data.columns:
+            recent_vol = data['Volume'].iloc[-5:].mean()
+            pattern_vol = data['Volume'].iloc[min(points):max(points)+1].mean()
+            if pattern_vol > recent_vol * 1.2:  # Higher volume during pattern
+                confidence += 10
+        
+        # Reduce confidence if pattern is too recent (less reliable)
+        pattern_age = len(data) - max(points)
+        if pattern_age < 5:  # Very recent pattern
+            confidence -= 10
+        
+    # Ensure confidence is between 0 and 100
+    confidence = max(0, min(100, confidence))
+    
+    return round(confidence, 1)
 
 def plot_pattern(data, pattern_name, points, ticker):
     # Plotting disabled for GitHub Actions
