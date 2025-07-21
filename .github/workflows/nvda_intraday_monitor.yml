@@ -74,7 +74,7 @@ jobs:
         echo ""
         echo "Latest Prediction Summary:"
         if [ -f "evaluation_results/nvda_prediction_history.json" ]; then
-          python3 show_prediction_summary.py
+          python3 ../show_prediction_summary.py || echo "No predictions to show yet"
         fi
         
     - name: Commit prediction history

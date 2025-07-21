@@ -3,6 +3,7 @@ name: Update NVDA Data
 on:
   schedule:
     # Run weekly on Sunday at midnight
+    # Note: Yahoo Finance only provides 15-minute data for the last 60 days
     - cron: '0 0 * * 0'
   workflow_dispatch:
 

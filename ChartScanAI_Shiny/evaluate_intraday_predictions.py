@@ -252,6 +252,14 @@ def main():
     overall_accuracy = np.mean([performance[tf]['direction_accuracy'] for tf in ['1h', '3h', 'eod']])
     print(f"\nOverall Direction Accuracy: {overall_accuracy:.1f}%")
     
+    # Check if this is the first run (no predictions evaluated)
+    total_evaluated = sum(performance[tf]['total_predictions'] for tf in ['1h', '3h', 'eod'])
+    
+    if total_evaluated == 0:
+        print("✓ First run - no past predictions to evaluate yet")
+        print("  New predictions have been saved for future evaluation")
+        return 0
+    
     # Exit with appropriate code
     if overall_accuracy >= 45:
         print("✓ Performance meets threshold")
