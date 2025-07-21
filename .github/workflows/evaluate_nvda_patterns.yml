@@ -181,5 +181,8 @@ jobs:
         AZURE_STORAGE_KEY: ${{ secrets.ACCESS_KEY }}
         AZURE_CONTAINER_NAME: ${{ secrets.CONTAINER_NAME }}
       run: |
+        # Install pandas if needed
+        pip install pandas azure-storage-blob
+        
         # Upload prediction and evaluation results to Azure
         python3 save_results_to_azure.py
