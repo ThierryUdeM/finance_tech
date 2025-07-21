@@ -13,6 +13,7 @@ import yfinance as yf
 from azure.storage.blob import BlobServiceClient
 from dotenv import load_dotenv
 import logging
+from io import StringIO
 
 # Add the script directory to Python path
 sys.path.append('/home/thierrygc/script/')
@@ -107,17 +108,18 @@ class PatternSignalTracker:
         return signals
     
     def save_signals_to_azure(self, signals, ticker):
-        """Save signals to Azure blob storage"""
+        """Save signals to Azure blob storage as CSV"""
         if not signals:
             logger.info(f"No signals to save for {ticker}")
             return
         
         # Create filename with timestamp
         timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-        filename = f"signals/{ticker}/{ticker}_signals_{timestamp}.json"
+        filename = f"python_package_evaluation/scanner/{ticker}_signals_{timestamp}.csv"
         
-        # Convert to JSON
-        json_data = json.dumps(signals, indent=2)
+        # Convert to DataFrame and then CSV
+        df = pd.DataFrame(signals)
+        csv_data = df.to_csv(index=False)
         
         # Upload to Azure
         try:
@@ -125,7 +127,7 @@ class PatternSignalTracker:
                 container=self.container_name,
                 blob=filename
             )
-            blob_client.upload_blob(json_data, overwrite=True)
+            blob_client.upload_blob(csv_data, overwrite=True)
             logger.info(f"Saved {len(signals)} signals to {filename}")
         except Exception as e:
             logger.error(f"Error saving to Azure: {e}")
@@ -136,7 +138,7 @@ class PatternSignalTracker:
         
         # List all signal files for the ticker
         container_client = self.blob_service_client.get_container_client(self.container_name)
-        blobs = container_client.list_blobs(name_starts_with=f"signals/{ticker}/")
+        blobs = container_client.list_blobs(name_starts_with=f"python_package_evaluation/scanner/{ticker}_")
         
         all_signals = []
         for blob in blobs:
@@ -146,7 +148,9 @@ class PatternSignalTracker:
                 blob=blob.name
             )
             content = blob_client.download_blob().readall()
-            signals = json.loads(content)
+            # Read CSV content
+            df = pd.read_csv(StringIO(content.decode('utf-8')))
+            signals = df.to_dict('records')
             all_signals.extend(signals)
         
         if not all_signals:
@@ -260,19 +264,47 @@ class PatternSignalTracker:
         return {**signal, 'status': 'pending', 'outcome': 'waiting'}
     
     def _save_evaluation_results(self, stats, ticker):
-        """Save evaluation results to Azure"""
+        """Save evaluation results to Azure as CSV"""
         timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-        filename = f"evaluations/{ticker}/{ticker}_evaluation_{timestamp}.json"
+        filename = f"python_package_evaluation/evaluation/{ticker}_evaluation_{timestamp}.csv"
         
-        json_data = json.dumps(stats, indent=2)
+        # Create DataFrame from stats (excluding the detailed signals)
+        summary_data = {
+            'ticker': [stats['ticker']],
+            'evaluation_time': [stats['evaluation_time']],
+            'total_signals': [stats['total_signals']],
+            'pending_signals': [stats['pending_signals']],
+            'triggered_signals': [stats['triggered_signals']],
+            'hit_target': [stats['hit_target']],
+            'hit_stop': [stats['hit_stop']],
+            'expired': [stats['expired']],
+            'win_rate': [stats['win_rate']]
+        }
+        df_summary = pd.DataFrame(summary_data)
+        csv_data = df_summary.to_csv(index=False)
+        
+        # Also save detailed signal evaluations
+        if stats['signals_evaluated']:
+            detail_filename = f"python_package_evaluation/evaluation/{ticker}_evaluation_details_{timestamp}.csv"
+            df_details = pd.DataFrame(stats['signals_evaluated'])
+            csv_details = df_details.to_csv(index=False)
         
         try:
             blob_client = self.blob_service_client.get_blob_client(
                 container=self.container_name,
                 blob=filename
             )
-            blob_client.upload_blob(json_data, overwrite=True)
-            logger.info(f"Saved evaluation results to {filename}")
+            blob_client.upload_blob(csv_data, overwrite=True)
+            logger.info(f"Saved evaluation summary to {filename}")
+            
+            # Save detailed results if they exist
+            if stats['signals_evaluated']:
+                detail_blob_client = self.blob_service_client.get_blob_client(
+                    container=self.container_name,
+                    blob=detail_filename
+                )
+                detail_blob_client.upload_blob(csv_details, overwrite=True)
+                logger.info(f"Saved evaluation details to {detail_filename}")
         except Exception as e:
             logger.error(f"Error saving evaluation results: {e}")
 
