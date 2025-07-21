@@ -15,8 +15,8 @@ jobs:
     if: github.event_name == 'workflow_dispatch' || (github.event.schedule == '*/15 14-20 * * 1-5' || github.event.schedule == '0 21 * * 1-5')
     
     permissions:
-      contents: write
-      issues: write
+      contents: read
+      issues: write  # Only need write for creating issue alerts
     
     steps:
     - name: Checkout repository
@@ -77,22 +77,8 @@ jobs:
           python3 ../show_prediction_summary.py || echo "No predictions to show yet"
         fi
         
-    - name: Commit prediction history
-      if: steps.market_check.outputs.market_open == '0'
-      run: |
-        git config --local user.email "action@github.com"
-        git config --local user.name "GitHub Action"
-        
-        # Add evaluation results
-        git add ChartScanAI_Shiny/evaluation_results/*.json || true
-        git add ChartScanAI_Shiny/evaluation_results/*.md || true
-        
-        # Commit with timestamp
-        TIMESTAMP=$(date -u +"%Y-%m-%d %H:%M UTC")
-        git commit -m "Update NVDA predictions - ${TIMESTAMP}" || echo "No changes to commit"
-        
-        # Push changes
-        git push || echo "No changes to push"
+    # Prediction history is saved to Azure blob storage
+    # No need to commit back to GitHub
         
     - name: Create alert for significant predictions
       if: steps.market_check.outputs.market_open == '0' && failure()

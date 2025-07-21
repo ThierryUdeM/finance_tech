@@ -15,8 +15,8 @@ jobs:
   evaluate:
     runs-on: ubuntu-latest
     permissions:
-      contents: write  # Changed from read to write
-      issues: write
+      contents: read
+      issues: write  # Only need write for creating issue alerts
     
     steps:
     - name: Checkout repository
@@ -174,26 +174,5 @@ jobs:
         name: evaluation-results-${{ github.run_number }}
         path: ./evaluation_results
         
-    - name: Update performance tracking
-      run: |
-        # Create performance history directory
-        mkdir -p performance_history
-        
-        # Copy results to history with date
-        DATE=$(date +%Y%m%d_%H%M%S)
-        mkdir -p performance_history/${DATE}
-        
-        if [ -d "ChartScanAI_Shiny/evaluation_results" ]; then
-          cp -r ChartScanAI_Shiny/evaluation_results/* performance_history/${DATE}/ || echo "No results to copy"
-        else
-          echo "No evaluation results found"
-        fi
-        
-        echo "Performance tracking updated"
-        
-    - name: Commit performance history
-      uses: EndBug/add-and-commit@v9
-      with:
-        add: 'performance_history'
-        message: 'Update NVDA pattern prediction performance history'
-        default_author: github_actions
+    # Performance tracking is handled by Azure blob storage
+    # No need to commit back to GitHub

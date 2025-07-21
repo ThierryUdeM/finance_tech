@@ -107,44 +107,44 @@ jobs:
           else
             # Create a minimal pattern scanner with required functions
             cat > /tmp/script/pattern_scanner.py << 'EOFPS'
-import pandas as pd
-import numpy as np
-from scipy.signal import find_peaks
-
-def clean_yfinance_data(data):
-    cleaned_data = data.copy()
-    if isinstance(cleaned_data.columns, pd.MultiIndex):
-        cleaned_data.columns = cleaned_data.columns.get_level_values(0)
-    for col in ['Open', 'High', 'Low', 'Close', 'Volume']:
-        if col in cleaned_data.columns:
-            cleaned_data[col] = pd.to_numeric(cleaned_data[col], errors='coerce')
-    cleaned_data.dropna(inplace=True)
-    return cleaned_data
-
-def find_head_and_shoulders(data):
-    return None
-
-def find_inverse_head_and_shoulders(data):
-    return None
-
-def find_double_top(data):
-    return None
-
-def find_double_bottom(data):
-    return None
-
-def calculate_trading_signals(data, pattern_name, points):
-    current_price = float(data['Close'].iloc[-1])
-    return {
-        'action': 'BUY',
-        'current_price': current_price,
-        'entry': current_price * 1.01,
-        'stop_loss': current_price * 0.98,
-        'target': current_price * 1.03,
-        'risk_reward': 1.5,
-        'distance_to_entry': 1.0
-    }
-EOFPS
+        import pandas as pd
+        import numpy as np
+        from scipy.signal import find_peaks
+        
+        def clean_yfinance_data(data):
+            cleaned_data = data.copy()
+            if isinstance(cleaned_data.columns, pd.MultiIndex):
+                cleaned_data.columns = cleaned_data.columns.get_level_values(0)
+            for col in ['Open', 'High', 'Low', 'Close', 'Volume']:
+                if col in cleaned_data.columns:
+                    cleaned_data[col] = pd.to_numeric(cleaned_data[col], errors='coerce')
+            cleaned_data.dropna(inplace=True)
+            return cleaned_data
+        
+        def find_head_and_shoulders(data):
+            return None
+        
+        def find_inverse_head_and_shoulders(data):
+            return None
+        
+        def find_double_top(data):
+            return None
+        
+        def find_double_bottom(data):
+            return None
+        
+        def calculate_trading_signals(data, pattern_name, points):
+            current_price = float(data['Close'].iloc[-1])
+            return {
+                'action': 'BUY',
+                'current_price': current_price,
+                'entry': current_price * 1.01,
+                'stop_loss': current_price * 0.98,
+                'target': current_price * 1.03,
+                'risk_reward': 1.5,
+                'distance_to_entry': 1.0
+            }
+        EOFPS
           fi
         fi
         
@@ -213,44 +213,44 @@ EOFPS
           else
             # Create a minimal pattern scanner with required functions
             cat > /tmp/script/pattern_scanner.py << 'EOFPS'
-import pandas as pd
-import numpy as np
-from scipy.signal import find_peaks
-
-def clean_yfinance_data(data):
-    cleaned_data = data.copy()
-    if isinstance(cleaned_data.columns, pd.MultiIndex):
-        cleaned_data.columns = cleaned_data.columns.get_level_values(0)
-    for col in ['Open', 'High', 'Low', 'Close', 'Volume']:
-        if col in cleaned_data.columns:
-            cleaned_data[col] = pd.to_numeric(cleaned_data[col], errors='coerce')
-    cleaned_data.dropna(inplace=True)
-    return cleaned_data
-
-def find_head_and_shoulders(data):
-    return None
-
-def find_inverse_head_and_shoulders(data):
-    return None
-
-def find_double_top(data):
-    return None
-
-def find_double_bottom(data):
-    return None
-
-def calculate_trading_signals(data, pattern_name, points):
-    current_price = float(data['Close'].iloc[-1])
-    return {
-        'action': 'BUY',
-        'current_price': current_price,
-        'entry': current_price * 1.01,
-        'stop_loss': current_price * 0.98,
-        'target': current_price * 1.03,
-        'risk_reward': 1.5,
-        'distance_to_entry': 1.0
-    }
-EOFPS
+        import pandas as pd
+        import numpy as np
+        from scipy.signal import find_peaks
+        
+        def clean_yfinance_data(data):
+            cleaned_data = data.copy()
+            if isinstance(cleaned_data.columns, pd.MultiIndex):
+                cleaned_data.columns = cleaned_data.columns.get_level_values(0)
+            for col in ['Open', 'High', 'Low', 'Close', 'Volume']:
+                if col in cleaned_data.columns:
+                    cleaned_data[col] = pd.to_numeric(cleaned_data[col], errors='coerce')
+            cleaned_data.dropna(inplace=True)
+            return cleaned_data
+        
+        def find_head_and_shoulders(data):
+            return None
+        
+        def find_inverse_head_and_shoulders(data):
+            return None
+        
+        def find_double_top(data):
+            return None
+        
+        def find_double_bottom(data):
+            return None
+        
+        def calculate_trading_signals(data, pattern_name, points):
+            current_price = float(data['Close'].iloc[-1])
+            return {
+                'action': 'BUY',
+                'current_price': current_price,
+                'entry': current_price * 1.01,
+                'stop_loss': current_price * 0.98,
+                'target': current_price * 1.03,
+                'risk_reward': 1.5,
+                'distance_to_entry': 1.0
+            }
+        EOFPS
           fi
         fi
         
