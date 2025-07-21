@@ -77,8 +77,15 @@ jobs:
           python3 ../show_prediction_summary.py || echo "No predictions to show yet"
         fi
         
-    # Prediction history is saved to Azure blob storage
-    # No need to commit back to GitHub
+    - name: Upload results to Azure
+      if: steps.market_check.outputs.market_open == '0'
+      env:
+        AZURE_STORAGE_ACCOUNT: ${{ secrets.STORAGE_ACCOUNT_NAME }}
+        AZURE_STORAGE_KEY: ${{ secrets.ACCESS_KEY }}
+        AZURE_CONTAINER_NAME: ${{ secrets.CONTAINER_NAME }}
+      run: |
+        # Upload prediction and evaluation results to Azure
+        python3 save_results_to_azure.py
         
     - name: Create alert for significant predictions
       if: steps.market_check.outputs.market_open == '0' && failure()

@@ -174,5 +174,12 @@ jobs:
         name: evaluation-results-${{ github.run_number }}
         path: ./evaluation_results
         
-    # Performance tracking is handled by Azure blob storage
-    # No need to commit back to GitHub
+    - name: Upload results to Azure
+      if: always()
+      env:
+        AZURE_STORAGE_ACCOUNT: ${{ secrets.STORAGE_ACCOUNT_NAME }}
+        AZURE_STORAGE_KEY: ${{ secrets.ACCESS_KEY }}
+        AZURE_CONTAINER_NAME: ${{ secrets.CONTAINER_NAME }}
+      run: |
+        # Upload prediction and evaluation results to Azure
+        python3 save_results_to_azure.py
