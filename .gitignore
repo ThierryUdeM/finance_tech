@@ -4,14 +4,25 @@ __pycache__/
 *$py.class
 *.so
 .Python
-env/
 venv/
-ENV/
-.venv
+env/
+*.egg-info/
+dist/
+build/
 
-# Environment variables
-.env
+# Temporary files
+temp_charts/
+*.log
+*.tmp
+.DS_Store
+
+# Config files with sensitive data
 config/.env
+.env
+
+# Model weights (downloaded from Azure)
+weights/*.pt
+weights/*.pth
 
 # IDE
 .vscode/
@@ -19,27 +30,8 @@ config/.env
 *.swp
 *.swo
 
-# OS
-.DS_Store
-Thumbs.db
-
-# Temporary files
-temp_charts/
-*.tmp
-*.temp
-
-# Logs
-*.log
-
-# Local test outputs
-btc_monitor/
-scan_results/
-test_results/
-
-# Jupyter
-.ipynb_checkpoints/
-
-# R
-.Rhistory
-.RData
-.Rproj.user
+# Test files
+test_*.py
+test_*.R
+check_*.R
+check_*.py

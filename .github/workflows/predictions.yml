@@ -1,0 +1,50 @@
+name: Stock Predictions
+
+on:
+  schedule:
+    # Run every hour at :05 minutes past
+    - cron: '5 * * * *'
+  workflow_dispatch:  # Allow manual trigger
+
+jobs:
+  predict:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v3
+    
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.10'
+    
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install -r ChartScanAI_Shiny/requirements.txt
+    
+    - name: Download YOLO weights from Azure
+      env:
+        AZURE_STORAGE_ACCOUNT: ${{ secrets.AZURE_STORAGE_ACCOUNT }}
+        AZURE_STORAGE_KEY: ${{ secrets.AZURE_STORAGE_KEY }}
+        AZURE_CONTAINER_NAME: ${{ secrets.AZURE_CONTAINER_NAME }}
+      run: |
+        python ChartScanAI_Shiny/upload_weights_to_azure.py --download
+    
+    - name: Run Multi-Ticker Predictions
+      env:
+        AZURE_STORAGE_ACCOUNT: ${{ secrets.AZURE_STORAGE_ACCOUNT }}
+        AZURE_STORAGE_KEY: ${{ secrets.AZURE_STORAGE_KEY }}
+        AZURE_CONTAINER_NAME: ${{ secrets.AZURE_CONTAINER_NAME }}
+      run: |
+        python ChartScanAI_Shiny/multi_ticker_predictor_azure.py
+    
+    - name: Upload logs
+      if: failure()
+      uses: actions/upload-artifact@v3
+      with:
+        name: prediction-logs
+        path: |
+          *.log
+          ChartScanAI_Shiny/*.log

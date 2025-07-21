@@ -217,6 +217,7 @@ class BTCPredictor:
         
         evaluation = {
             'timestamp': datetime.utcnow().isoformat(),
+            'ticker': 'BTC-USD',
             'prediction_time': past_data.get('timestamp'),
             'past_price': past_price,
             'current_price': current_price,
@@ -227,7 +228,7 @@ class BTCPredictor:
         }
         
         # Save evaluation
-        eval_blob_name = f"evaluations/{datetime.utcnow().strftime('%Y-%m-%d')}/{datetime.utcnow().strftime('%H%M%S')}.json"
+        eval_blob_name = f"evaluations/BTC-USD/{datetime.utcnow().strftime('%Y-%m-%d')}/{datetime.utcnow().strftime('%H%M%S')}.json"
         self.save_to_azure(evaluation, eval_blob_name)
         
         return evaluation
