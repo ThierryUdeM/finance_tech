@@ -98,16 +98,23 @@ jobs:
         # Update library cache and create symlinks
         sudo ldconfig
         
-        # Create additional symlinks to ensure library is found
-        sudo ln -sf /usr/lib/libta_lib.so.0.0.0 /usr/lib/libta_lib.so
-        sudo ln -sf /usr/lib/libta_lib.so.0.0.0 /usr/lib/libta_lib.so.0
+        # Verify installation and fix library naming
+        echo "Checking installed files..."
+        ls -la /usr/lib/libta_lib* || echo "No libta_lib found in /usr/lib"
+        ls -la /usr/lib/libta-lib* || echo "No libta-lib found in /usr/lib"
+        ls -la /usr/include/ta-lib/ || echo "No headers found"
         
-        # Verify installation
-        ls -la /usr/lib/libta_lib*
-        ls -la /usr/include/ta-lib/
+        # Create symlinks with both naming conventions
+        if [ -f /usr/lib/libta_lib.so.0.0.0 ]; then
+          sudo ln -sf /usr/lib/libta_lib.so.0.0.0 /usr/lib/libta_lib.so
+          sudo ln -sf /usr/lib/libta_lib.so.0.0.0 /usr/lib/libta_lib.so.0
+          # Also create hyphenated versions
+          sudo ln -sf /usr/lib/libta_lib.so.0.0.0 /usr/lib/libta-lib.so
+          sudo ln -sf /usr/lib/libta_lib.so.0.0.0 /usr/lib/libta-lib.so.0
+        fi
         
-        # Test that library can be found
-        ldconfig -p | grep ta_lib
+        # Update library cache
+        sudo ldconfig -v 2>/dev/null | grep -E 'ta_lib|ta-lib' || echo "Library not found in ldconfig"
     
     - name: Install Python dependencies
       run: |
@@ -117,14 +124,25 @@ jobs:
         grep -v "TA-Lib" requirements_pattern_scanner.txt > requirements_no_talib.txt
         pip install -r requirements_no_talib.txt
         
-        # Set environment variables for TA-Lib installation
+        # Install TA-Lib Python wrapper manually
+        cd /tmp
+        wget https://files.pythonhosted.org/packages/source/T/TA-Lib/ta_lib-0.6.4.tar.gz
+        tar -xzf ta_lib-0.6.4.tar.gz
+        cd ta_lib-0.6.4
+        
+        # Set environment variables
         export TA_INCLUDE_PATH=/usr/include
         export TA_LIBRARY_PATH=/usr/lib
-        export CFLAGS="-I/usr/include"
-        export LDFLAGS="-L/usr/lib"
         
-        # Install TA-Lib Python wrapper
-        pip install --no-cache-dir TA-Lib
+        # Check if libraries exist
+        echo "Looking for TA-Lib libraries..."
+        find /usr -name "libta_lib*" -o -name "libta-lib*" 2>/dev/null || echo "No TA-Lib libraries found"
+        
+        # Build and install
+        python setup.py build
+        python setup.py install
+        
+        cd -
         
         # Verify both libraries are installed
         python -c "import talib; print(f'TA-Lib version: {talib.__version__}')"
@@ -188,16 +206,23 @@ jobs:
         # Update library cache and create symlinks
         sudo ldconfig
         
-        # Create additional symlinks to ensure library is found
-        sudo ln -sf /usr/lib/libta_lib.so.0.0.0 /usr/lib/libta_lib.so
-        sudo ln -sf /usr/lib/libta_lib.so.0.0.0 /usr/lib/libta_lib.so.0
+        # Verify installation and fix library naming
+        echo "Checking installed files..."
+        ls -la /usr/lib/libta_lib* || echo "No libta_lib found in /usr/lib"
+        ls -la /usr/lib/libta-lib* || echo "No libta-lib found in /usr/lib"
+        ls -la /usr/include/ta-lib/ || echo "No headers found"
         
-        # Verify installation
-        ls -la /usr/lib/libta_lib*
-        ls -la /usr/include/ta-lib/
+        # Create symlinks with both naming conventions
+        if [ -f /usr/lib/libta_lib.so.0.0.0 ]; then
+          sudo ln -sf /usr/lib/libta_lib.so.0.0.0 /usr/lib/libta_lib.so
+          sudo ln -sf /usr/lib/libta_lib.so.0.0.0 /usr/lib/libta_lib.so.0
+          # Also create hyphenated versions
+          sudo ln -sf /usr/lib/libta_lib.so.0.0.0 /usr/lib/libta-lib.so
+          sudo ln -sf /usr/lib/libta_lib.so.0.0.0 /usr/lib/libta-lib.so.0
+        fi
         
-        # Test that library can be found
-        ldconfig -p | grep ta_lib
+        # Update library cache
+        sudo ldconfig -v 2>/dev/null | grep -E 'ta_lib|ta-lib' || echo "Library not found in ldconfig"
     
     - name: Install Python dependencies
       run: |
@@ -207,14 +232,25 @@ jobs:
         grep -v "TA-Lib" requirements_pattern_scanner.txt > requirements_no_talib.txt
         pip install -r requirements_no_talib.txt
         
-        # Set environment variables for TA-Lib installation
+        # Install TA-Lib Python wrapper manually
+        cd /tmp
+        wget https://files.pythonhosted.org/packages/source/T/TA-Lib/ta_lib-0.6.4.tar.gz
+        tar -xzf ta_lib-0.6.4.tar.gz
+        cd ta_lib-0.6.4
+        
+        # Set environment variables
         export TA_INCLUDE_PATH=/usr/include
         export TA_LIBRARY_PATH=/usr/lib
-        export CFLAGS="-I/usr/include"
-        export LDFLAGS="-L/usr/lib"
         
-        # Install TA-Lib Python wrapper
-        pip install --no-cache-dir TA-Lib
+        # Check if libraries exist
+        echo "Looking for TA-Lib libraries..."
+        find /usr -name "libta_lib*" -o -name "libta-lib*" 2>/dev/null || echo "No TA-Lib libraries found"
+        
+        # Build and install
+        python setup.py build
+        python setup.py install
+        
+        cd -
         
         # Verify both libraries are installed
         python -c "import talib; print(f'TA-Lib version: {talib.__version__}')"
@@ -279,16 +315,23 @@ jobs:
         # Update library cache and create symlinks
         sudo ldconfig
         
-        # Create additional symlinks to ensure library is found
-        sudo ln -sf /usr/lib/libta_lib.so.0.0.0 /usr/lib/libta_lib.so
-        sudo ln -sf /usr/lib/libta_lib.so.0.0.0 /usr/lib/libta_lib.so.0
+        # Verify installation and fix library naming
+        echo "Checking installed files..."
+        ls -la /usr/lib/libta_lib* || echo "No libta_lib found in /usr/lib"
+        ls -la /usr/lib/libta-lib* || echo "No libta-lib found in /usr/lib"
+        ls -la /usr/include/ta-lib/ || echo "No headers found"
         
-        # Verify installation
-        ls -la /usr/lib/libta_lib*
-        ls -la /usr/include/ta-lib/
+        # Create symlinks with both naming conventions
+        if [ -f /usr/lib/libta_lib.so.0.0.0 ]; then
+          sudo ln -sf /usr/lib/libta_lib.so.0.0.0 /usr/lib/libta_lib.so
+          sudo ln -sf /usr/lib/libta_lib.so.0.0.0 /usr/lib/libta_lib.so.0
+          # Also create hyphenated versions
+          sudo ln -sf /usr/lib/libta_lib.so.0.0.0 /usr/lib/libta-lib.so
+          sudo ln -sf /usr/lib/libta_lib.so.0.0.0 /usr/lib/libta-lib.so.0
+        fi
         
-        # Test that library can be found
-        ldconfig -p | grep ta_lib
+        # Update library cache
+        sudo ldconfig -v 2>/dev/null | grep -E 'ta_lib|ta-lib' || echo "Library not found in ldconfig"
     
     - name: Install Python dependencies
       run: |
@@ -298,14 +341,25 @@ jobs:
         grep -v "TA-Lib" requirements_pattern_scanner.txt > requirements_no_talib.txt
         pip install -r requirements_no_talib.txt
         
-        # Set environment variables for TA-Lib installation
+        # Install TA-Lib Python wrapper manually
+        cd /tmp
+        wget https://files.pythonhosted.org/packages/source/T/TA-Lib/ta_lib-0.6.4.tar.gz
+        tar -xzf ta_lib-0.6.4.tar.gz
+        cd ta_lib-0.6.4
+        
+        # Set environment variables
         export TA_INCLUDE_PATH=/usr/include
         export TA_LIBRARY_PATH=/usr/lib
-        export CFLAGS="-I/usr/include"
-        export LDFLAGS="-L/usr/lib"
         
-        # Install TA-Lib Python wrapper
-        pip install --no-cache-dir TA-Lib
+        # Check if libraries exist
+        echo "Looking for TA-Lib libraries..."
+        find /usr -name "libta_lib*" -o -name "libta-lib*" 2>/dev/null || echo "No TA-Lib libraries found"
+        
+        # Build and install
+        python setup.py build
+        python setup.py install
+        
+        cd -
         
         # Verify both libraries are installed
         python -c "import talib; print(f'TA-Lib version: {talib.__version__}')"
