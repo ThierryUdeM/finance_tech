@@ -53,6 +53,21 @@ CONFIG = {
             'name': 'Air Canada',
             'evaluation_threshold': 2.0,
             'holding_days': 4
+        },
+        'AAPL': {
+            'name': 'Apple Inc.',
+            'evaluation_threshold': 1.2,  # Large cap, typically smaller moves
+            'holding_days': 3
+        },
+        'MSFT': {
+            'name': 'Microsoft Corporation',
+            'evaluation_threshold': 1.3,  # Large cap, moderate volatility
+            'holding_days': 3
+        },
+        'TSLA': {
+            'name': 'Tesla Inc.',
+            'evaluation_threshold': 2.5,  # High volatility stock
+            'holding_days': 2
         }
     },
     'chart_periods': {
