@@ -315,6 +315,10 @@ class SimpleTechnicalScanner:
             logger.error(f"No data retrieved for {ticker}")
             return None
         
+        # Handle multi-level columns from yfinance
+        if isinstance(data.columns, pd.MultiIndex):
+            data.columns = data.columns.droplevel(1)
+        
         # Calculate indicators
         df = self.calculate_indicators(data)
         
