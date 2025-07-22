@@ -196,6 +196,11 @@ class CombinedPatternScanner:
         """Main scanning function"""
         logger.info(f"Scanning patterns for {ticker}")
         
+        # For intraday patterns, we want today's data
+        # Use a longer period to ensure we get today's data
+        if interval in ['1m', '5m', '15m', '30m']:
+            period = '2d'  # Get 2 days to ensure we have today's data
+        
         # Download data
         data = yf.download(ticker, period=period, interval=interval, progress=False)
         
@@ -205,6 +210,19 @@ class CombinedPatternScanner:
         
         # Clean data
         data = self.clean_data(data)
+        
+        # Filter for today's data only (for intraday intervals)
+        if interval in ['1m', '5m', '15m', '30m']:
+            today = datetime.now().date()
+            data = data[data.index.date == today]
+            
+            if data.empty:
+                logger.warning(f"No data for today ({today}) yet. Using most recent data available.")
+                # Re-download and use most recent data
+                data = yf.download(ticker, period=period, interval=interval, progress=False)
+                data = self.clean_data(data)
+        
+        logger.info(f"Data range: {data.index[0]} to {data.index[-1]} ({len(data)} bars)")
         
         # Detect all patterns
         all_patterns = []
@@ -233,6 +251,11 @@ class CombinedPatternScanner:
         
         # Create DataFrame
         df = pd.DataFrame(patterns)
+        
+        # Add scan metadata
+        if not df.empty:
+            df['scan_timestamp'] = datetime.now()
+            df['data_date'] = df['timestamp'].dt.date.iloc[0] if len(df) > 0 else None
         
         # Create filename
         timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
