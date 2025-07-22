@@ -1,9 +1,9 @@
-name: Multi-Ticker YOLO Predictions
+name: Multi-Ticker YOLO Predictions (Daily)
 
 on:
   schedule:
-    # Run every hour at minute 0
-    - cron: '0 * * * *'
+    # Run at 4:00 PM ET (9:00 PM UTC) for daily charts
+    - cron: '0 21 * * 1-5'  # Monday to Friday
   workflow_dispatch:  # Allow manual triggers
 
 jobs:
@@ -32,14 +32,14 @@ jobs:
         python -m pip install --upgrade pip
         pip install -r ChartScanAI_Shiny/requirements.txt
     
-    - name: Run predictions and evaluation
+    - name: Run daily predictions
       env:
         STORAGE_ACCOUNT_NAME: ${{ secrets.STORAGE_ACCOUNT_NAME }}
         ACCESS_KEY: ${{ secrets.ACCESS_KEY }}
         CONTAINER_NAME: ${{ secrets.CONTAINER_NAME }}
       run: |
         cd ChartScanAI_Shiny
-        python multi_ticker_predictor_azure_volume.py
+        python multi_ticker_predictor_daily.py
     
     - name: Create summary
       if: always()
@@ -52,6 +52,8 @@ jobs:
         echo "- BTC-USD (Bitcoin)" >> $GITHUB_STEP_SUMMARY
         echo "- NVDA (NVIDIA)" >> $GITHUB_STEP_SUMMARY
         echo "- AC.TO (Air Canada)" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "**Analysis Type**: Daily Chart Patterns (2-5 day swing trades)" >> $GITHUB_STEP_SUMMARY
         echo "" >> $GITHUB_STEP_SUMMARY
         echo "Predictions completed - check Azure Storage for results" >> $GITHUB_STEP_SUMMARY
 
