@@ -1,0 +1,48 @@
+# Ensemble Configuration for NVDA Pattern Prediction System
+# Allows dynamic tuning without code changes
+
+# Timeframe ensemble weights (sum should equal 1.0)
+timeframe_weights:
+  short_term: 0.4    # 2h lookback (query_length=8)
+  medium_term: 0.35  # 3h lookback (query_length=12) 
+  long_term: 0.25    # 5h lookback (query_length=20)
+
+# Prediction horizon weights (sum should equal 1.0)
+horizon_weights:
+  1h: 0.5     # 1-hour predictions (most reliable)
+  3h: 0.3     # 3-hour predictions  
+  eod: 0.2    # End-of-day predictions (least reliable)
+
+# Adaptive threshold configuration
+adaptive_thresholds:
+  enabled: true
+  atr_multiplier: 0.25    # ATR multiplier for dynamic thresholds
+  atr_period: 14          # Period for ATR calculation
+  min_threshold: 0.05     # Minimum threshold (0.05%)
+  max_threshold: 0.50     # Maximum threshold (0.50%)
+  fallback_threshold: 0.1 # Fallback if ATR calculation fails
+
+# Time decay weighting for pattern matching
+time_decay:
+  enabled: true
+  decay_rate: 0.1         # Higher = more emphasis on recent bars
+  focus_bars: 3           # Number of recent bars to emphasize
+
+# Pattern matching configuration
+pattern_matching:
+  min_library_size: 100   # Minimum patterns required
+  confidence_thresholds:
+    high: 10000          # Library size for HIGH confidence
+    medium: 1000         # Library size for MEDIUM confidence
+    # Below medium = LOW confidence
+
+# Volatility model configuration
+volatility_model:
+  training_lookback: 40   # Bars for volatility estimation
+  prediction_window: 20   # Bars for prediction (must be < training_lookback)
+  confidence_blend: true  # Enable probability-based ensemble
+  
+# Performance monitoring
+performance:
+  accuracy_threshold: 0.45  # Minimum accuracy before alerts
+  evaluation_periods: [1, 3, 24]  # Hours to evaluate predictions

@@ -32,7 +32,7 @@ jobs:
     - name: Install dependencies
       run: |
         python -m pip install --upgrade pip
-        pip install pandas numpy yfinance azure-storage-blob
+        pip install pandas numpy yfinance azure-storage-blob scikit-learn pyyaml
         
     - name: Check market status
       id: market_check
@@ -55,6 +55,15 @@ jobs:
         # Copy historical data
         if [ -f "data/NVDA_15min_pattern_ready.csv" ]; then
           cp data/NVDA_15min_pattern_ready.csv directional_analysis/
+        fi
+        
+        # Validate configuration
+        echo "Configuration validation:"
+        if [ -f "config/ensemble_weights.yaml" ]; then
+          echo "✓ Enhanced configuration found"
+          cat config/ensemble_weights.yaml | head -10
+        else
+          echo "⚠ Using default configuration"
         fi
         
     - name: Download current intraday data
