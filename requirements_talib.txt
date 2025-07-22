@@ -1,0 +1,2 @@
+# TA-Lib requirement - install after system dependencies
+TA-Lib>=0.4.24

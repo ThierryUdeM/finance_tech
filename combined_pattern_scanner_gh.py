@@ -84,6 +84,7 @@ class CombinedPatternScanner:
     def detect_candlestick_patterns(self, data):
         """Detect candlestick patterns using TA-Lib"""
         if not HAS_TALIB:
+            logger.warning("TA-Lib not available, skipping candlestick patterns")
             return []
         
         patterns = []
