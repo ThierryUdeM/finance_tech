@@ -39,7 +39,7 @@ jobs:
         CONTAINER_NAME: ${{ secrets.CONTAINER_NAME }}
       run: |
         cd ChartScanAI_Shiny
-        python multi_ticker_predictor_azure.py
+        python multi_ticker_predictor_azure_volume.py
     
     - name: Create summary
       if: always()
@@ -80,4 +80,4 @@ jobs:
         CONTAINER_NAME: ${{ secrets.CONTAINER_NAME }}
       run: |
         cd ChartScanAI_Shiny
-        python -c "from multi_ticker_predictor_azure import MultiTickerPredictor; MultiTickerPredictor().generate_performance_report(days=7)"
+        python -c "from multi_ticker_predictor_azure_volume import VolumeEnhancedMultiTickerPredictor; VolumeEnhancedMultiTickerPredictor().generate_performance_report(days=7)"

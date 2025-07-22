@@ -18,6 +18,14 @@ import yfinance as yf
 import warnings
 warnings.filterwarnings('ignore')
 
+# Import volume confirmation module
+try:
+    from volume_confirmation import VolumeConfirmation, enhance_pattern_matching_with_volume
+    VOLUME_ENABLED = True
+except ImportError:
+    print("Warning: Volume confirmation module not found. Running without volume analysis.")
+    VOLUME_ENABLED = False
+
 # Get the directory where this script is located
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 
@@ -392,6 +400,47 @@ def forecast_shape_enhanced(ticker, interval="15m", period="60d", query_length=2
     preds['adaptive_threshold'] = adaptive_threshold
     preds['current_price'] = float(hist['close'].iloc[-1])
     
+    # Add volume confirmation if enabled
+    if VOLUME_ENABLED and 'volume' in hist.columns:
+        # Prepare data for volume analysis
+        vol_analyzer = VolumeConfirmation()
+        hist_with_volume = vol_analyzer.calculate_volume_metrics(hist)
+        
+        # Get volume score for the current pattern
+        recent_data = hist_with_volume.iloc[-query_length:]
+        
+        # Determine overall predicted direction
+        avg_pred = np.mean([preds.get('1h', 0), preds.get('3h', 0), preds.get('eod', 0)])
+        overall_direction = 'BULLISH' if avg_pred > 0 else 'BEARISH'
+        
+        # Calculate volume confirmation score
+        volume_score = vol_analyzer.get_volume_signal_strength(
+            recent_data,
+            overall_direction
+        )
+        
+        # Adjust confidence with volume
+        original_confidence = preds.get('confidence_score', 0.5)
+        adjusted_confidence = vol_analyzer.adjust_confidence_with_volume(
+            original_confidence,
+            volume_score
+        )
+        
+        # Add volume metrics to predictions
+        preds['volume_score'] = volume_score
+        preds['volume_adjusted_confidence'] = adjusted_confidence
+        preds['current_volume_ratio'] = float(hist_with_volume['volume_ratio'].iloc[-1]) if 'volume_ratio' in hist_with_volume else 1.0
+        preds['volume_quality'] = 'high' if volume_score > 0.7 else ('low' if volume_score < 0.3 else 'medium')
+        
+        # Create volume report
+        preds['volume_report'] = vol_analyzer.create_volume_report(
+            hist_with_volume,
+            hist.index[-1]
+        )
+        
+        # Update confidence score to volume-adjusted version
+        preds['confidence_score'] = adjusted_confidence
+    
     # Add directional classification with adaptive threshold
     for horizon in ['1h', '3h', 'eod']:
         if not np.isnan(preds[horizon]):
@@ -401,7 +450,10 @@ def forecast_shape_enhanced(ticker, interval="15m", period="60d", query_length=2
     
     # Add method information
     preds['method'] = 'enhanced_pattern_matching_v2'
-    preds['improvements'] = ['time_decay_weighting', 'adaptive_atr_thresholds', 'configurable_ensemble']
+    improvements = ['time_decay_weighting', 'adaptive_atr_thresholds', 'configurable_ensemble']
+    if VOLUME_ENABLED:
+        improvements.append('volume_confirmation')
+    preds['improvements'] = improvements
     
     return preds
 

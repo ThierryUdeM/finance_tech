@@ -1,285 +1,365 @@
-import yfinance as yf
-import pandas as pd
+#!/usr/bin/env python3
+"""
+Enhanced Pattern Scanner with Volume Validation and Dynamic Thresholds
+Addresses: Volume patterns, ATR-based thresholds, VWAP, and look-ahead bias prevention
+"""
+
 import numpy as np
-from tradingpatterns import TradingPatternScanner
+import pandas as pd
+import talib
 from datetime import datetime
+import logging
+import sys
 import os
-import warnings
-warnings.filterwarnings('ignore')
 
-def clean_yfinance_data(data):
-    """
-    Cleans data from yfinance, handling potential multi-index columns
-    and ensuring data is numeric.
-    """
-    cleaned_data = data.copy()
-    
-    # Handle multi-index columns if present
-    if isinstance(cleaned_data.columns, pd.MultiIndex):
-        cleaned_data.columns = cleaned_data.columns.get_level_values(0)
-    
-    # Ensure required columns are numeric
-    for col in ['Open', 'High', 'Low', 'Close', 'Volume']:
-        if col in cleaned_data.columns:
-            cleaned_data[col] = pd.to_numeric(cleaned_data[col], errors='coerce')
-    
-    # Remove any NaN values
-    cleaned_data.dropna(inplace=True)
-    
-    # Ensure index is datetime
-    if not isinstance(cleaned_data.index, pd.DatetimeIndex):
-        cleaned_data.index = pd.to_datetime(cleaned_data.index)
-    
-    return cleaned_data
+# Add the signal directory to path for volume_confirmation import
+sys.path.append(os.path.join(os.path.dirname(__file__), '..', 'signal', 'directional_analysis'))
 
-def scan_with_tradingpatterns(data, method='wavelet'):
-    """
-    Scan for patterns using TradingPatternScanner library
-    
-    Methods available:
-    - 'window': Rolling window extrema (78.5% accuracy)
-    - 'savgol': Savitzky-Golay filter (78.5% accuracy)
-    - 'kalman': Kalman filter (73.5% accuracy)
-    - 'wavelet': Wavelet denoising (84.5% accuracy) - RECOMMENDED
-    """
-    scanner = TradingPatternScanner(method=method)
-    
-    # Prepare data in the format expected by the library
-    prices = data[['Open', 'High', 'Low', 'Close', 'Volume']].copy()
-    
-    # Scan for patterns
-    patterns = scanner.scan_all_patterns(prices)
-    
-    return patterns
+try:
+    from volume_confirmation import VolumeConfirmation
+    VOLUME_MODULE_AVAILABLE = True
+except ImportError:
+    print("Warning: Enhanced volume confirmation module not available")
+    VOLUME_MODULE_AVAILABLE = False
 
-def find_head_and_shoulders(data):
-    """Find head and shoulders pattern using TradingPatternScanner"""
-    try:
-        scanner = TradingPatternScanner(method='wavelet')
-        patterns = scanner.find_head_and_shoulders(data)
-        
-        if patterns and len(patterns) > 0:
-            # Return the most recent pattern
-            latest_pattern = patterns[-1]
-            # Convert to format expected by calculate_trading_signals
-            return (latest_pattern['left_shoulder_idx'], 
-                   latest_pattern['head_idx'], 
-                   latest_pattern['right_shoulder_idx'],
-                   latest_pattern['left_trough_idx'],
-                   latest_pattern['right_trough_idx'])
-    except Exception as e:
-        print(f"Error in head_and_shoulders detection: {e}")
-    
-    return None
+logger = logging.getLogger(__name__)
 
-def find_inverse_head_and_shoulders(data):
-    """Find inverse head and shoulders pattern using TradingPatternScanner"""
-    try:
-        scanner = TradingPatternScanner(method='wavelet')
-        patterns = scanner.find_inverse_head_and_shoulders(data)
+class EnhancedPatternAnalyzer:
+    def __init__(self):
+        self.min_volume_samples = 20  # Minimum bars for volume analysis
+        if VOLUME_MODULE_AVAILABLE:
+            self.volume_analyzer = VolumeConfirmation()
         
-        if patterns and len(patterns) > 0:
-            # Return the most recent pattern
-            latest_pattern = patterns[-1]
-            return (latest_pattern['left_shoulder_idx'], 
-                   latest_pattern['head_idx'], 
-                   latest_pattern['right_shoulder_idx'],
-                   latest_pattern['left_peak_idx'],
-                   latest_pattern['right_peak_idx'])
-    except Exception as e:
-        print(f"Error in inverse_head_and_shoulders detection: {e}")
+    def calculate_atr(self, data, period=14):
+        """Calculate Average True Range for dynamic thresholds"""
+        return talib.ATR(data['High'].values, data['Low'].values, data['Close'].values, timeperiod=period)
     
-    return None
-
-def find_double_top(data):
-    """Find double top pattern using TradingPatternScanner"""
-    try:
-        scanner = TradingPatternScanner(method='wavelet')
-        patterns = scanner.find_double_tops(data)
+    def calculate_vwap(self, data):
+        """Calculate Volume Weighted Average Price"""
+        typical_price = (data['High'] + data['Low'] + data['Close']) / 3
+        vwap = (typical_price * data['Volume']).cumsum() / data['Volume'].cumsum()
+        return vwap
+    
+    def calculate_volatility_threshold(self, data, base_multiplier=0.25):
+        """Calculate dynamic threshold based on ATR"""
+        atr = self.calculate_atr(data)
+        current_atr = atr[-1] if len(atr) > 0 and not np.isnan(atr[-1]) else None
         
-        if patterns and len(patterns) > 0:
-            # Return the most recent pattern
-            latest_pattern = patterns[-1]
-            return (latest_pattern['first_peak_idx'], 
-                   latest_pattern['second_peak_idx'], 
-                   latest_pattern['valley_idx'])
-    except Exception as e:
-        print(f"Error in double_top detection: {e}")
+        if current_atr:
+            # Scale threshold by ATR as percentage of price
+            current_price = data['Close'].iloc[-1]
+            threshold_pct = (current_atr / current_price) * 100 * base_multiplier
+            return max(threshold_pct, 0.1)  # Minimum 0.1%
+        else:
+            # Fallback to standard deviation
+            returns = data['Close'].pct_change().dropna()
+            if len(returns) > 0:
+                daily_vol = returns.std() * np.sqrt(78)  # 78 five-min bars in a day
+                return max(daily_vol * 100 * base_multiplier, 0.1)
+            return 0.5  # Default fallback
     
-    return None
-
-def find_double_bottom(data):
-    """Find double bottom pattern using TradingPatternScanner"""
-    try:
-        scanner = TradingPatternScanner(method='wavelet')
-        patterns = scanner.find_double_bottoms(data)
+    def validate_head_shoulders_volume(self, data, pattern_indices):
+        """
+        Validate Head & Shoulders volume pattern:
+        - Volume should be highest at the head
+        - Lower volume on right shoulder vs left shoulder
+        - Increase on breakout
+        """
+        if len(pattern_indices) < 5:  # Need at least 5 points for H&S
+            return False, "Insufficient pattern points"
         
-        if patterns and len(patterns) > 0:
-            # Return the most recent pattern
-            latest_pattern = patterns[-1]
-            return (latest_pattern['first_trough_idx'], 
-                   latest_pattern['second_trough_idx'], 
-                   latest_pattern['peak_idx'])
-    except Exception as e:
-        print(f"Error in double_bottom detection: {e}")
-    
-    return None
-
-def calculate_trading_signals(data, pattern_name, points):
-    """Calculate actionable trading signals based on the pattern"""
-    current_price = float(data['Close'].iloc[-1])
-    signals = {}
-    
-    if pattern_name == "Head and Shoulders":
-        l, p, r, lt, rt = points
-        # Ensure indices are integers
-        l, p, r, lt, rt = int(l), int(p), int(r), int(lt), int(rt)
-        
-        # Neckline is the average of the two troughs
-        neckline = (data['Low'].iloc[lt] + data['Low'].iloc[rt]) / 2
-        head_height = data['High'].iloc[p] - neckline
-        
-        signals['action'] = 'SELL'
-        signals['entry'] = round(float(neckline * 0.99), 2)  # Enter on break below neckline
-        signals['stop_loss'] = round(float(data['High'].iloc[r] * 1.01), 2)  # Above right shoulder
-        signals['target'] = round(float(neckline - head_height), 2)  # Project head height below neckline
-        
-    elif pattern_name == "Inverse Head and Shoulders":
-        l, h, r, lp, rp = points
-        l, h, r, lp, rp = int(l), int(h), int(r), int(lp), int(rp)
-        
-        # Neckline is the average of the two peaks
-        neckline = (data['High'].iloc[lp] + data['High'].iloc[rp]) / 2
-        head_height = neckline - data['Low'].iloc[h]
-        
-        signals['action'] = 'BUY'
-        signals['entry'] = round(float(neckline * 1.01), 2)  # Enter on break above neckline
-        signals['stop_loss'] = round(float(data['Low'].iloc[r] * 0.99), 2)  # Below right shoulder
-        signals['target'] = round(float(neckline + head_height), 2)  # Project head height above neckline
-        
-    elif pattern_name == "Double Top":
-        p1, p2, valley = points
-        p1, p2, valley = int(p1), int(p2), int(valley)
-        
-        resistance = (data['High'].iloc[p1] + data['High'].iloc[p2]) / 2
-        support = data['Low'].iloc[valley]
-        pattern_height = resistance - support
-        
-        signals['action'] = 'SELL'
-        signals['entry'] = round(float(support * 0.99), 2)  # Enter on break below valley
-        signals['stop_loss'] = round(float(resistance * 1.01), 2)  # Above the double top
-        signals['target'] = round(float(support - pattern_height * 0.8), 2)  # Project 80% of pattern height
-        
-    elif pattern_name == "Double Bottom":
-        t1, t2, peak = points
-        t1, t2, peak = int(t1), int(t2), int(peak)
-        
-        support = (data['Low'].iloc[t1] + data['Low'].iloc[t2]) / 2
-        resistance = data['High'].iloc[peak]
-        pattern_height = resistance - support
-        
-        signals['action'] = 'BUY'
-        signals['entry'] = round(float(resistance * 1.01), 2)  # Enter on break above peak
-        signals['stop_loss'] = round(float(support * 0.99), 2)  # Below the double bottom
-        signals['target'] = round(float(resistance + pattern_height * 0.8), 2)  # Project 80% of pattern height
-    
-    # Calculate risk/reward ratio
-    if 'entry' in signals and 'stop_loss' in signals and 'target' in signals:
-        risk = abs(signals['entry'] - signals['stop_loss'])
-        reward = abs(signals['target'] - signals['entry'])
-        signals['risk_reward'] = round(reward / risk if risk > 0 else 0, 2)
-    
-    signals['current_price'] = round(current_price, 2)
-    signals['distance_to_entry'] = round(abs(current_price - signals['entry']) / current_price * 100, 2)
-    
-    # Add pattern confidence based on TradingPatternScanner's accuracy
-    signals['confidence'] = 84.5  # Wavelet method accuracy
-    
-    return signals
-
-def calculate_pattern_confidence(data, pattern_name, points):
-    """
-    Calculate confidence score for the pattern
-    Using TradingPatternScanner's reported accuracy for wavelet method
-    """
-    # Base confidence from wavelet method accuracy
-    confidence = 84.5
-    
-    # Additional adjustments based on pattern recency
-    if pattern_name in ["Double Top", "Double Bottom"]:
-        if pattern_name == "Double Top":
-            p1, p2, valley = points
-            pattern_end = max(p1, p2)
-        else:  # Double Bottom
-            t1, t2, peak = points
-            pattern_end = max(t1, t2)
-        
-        # Reduce confidence if pattern is too recent (less reliable)
-        pattern_age = len(data) - pattern_end
-        if pattern_age < 5:  # Very recent pattern
-            confidence -= 10
-        elif pattern_age > 20:  # Well-formed pattern
-            confidence += 5
-    
-    # Ensure confidence is between 0 and 100
-    confidence = max(0, min(100, confidence))
-    
-    return round(confidence, 1)
-
-def plot_pattern(data, pattern_name, points, ticker):
-    """
-    Visualization function (optional)
-    Note: Commented out for GitHub Actions compatibility
-    """
-    pass
-
-# Fallback functions for compatibility
-def scan_patterns(ticker, data=None, interval='5m', period='1d'):
-    """
-    Main function to scan for all patterns
-    """
-    if data is None:
-        data = yf.download(ticker, period=period, interval=interval, progress=False)
-    
-    if data.empty:
-        return None
-    
-    cleaned_data = clean_yfinance_data(data)
-    
-    patterns = {
-        "Head and Shoulders": find_head_and_shoulders,
-        "Inverse Head and Shoulders": find_inverse_head_and_shoulders,
-        "Double Top": find_double_top,
-        "Double Bottom": find_double_bottom
-    }
-    
-    results = {}
-    for pattern_name, find_func in patterns.items():
-        result = find_func(cleaned_data)
-        if result is not None:
-            signals = calculate_trading_signals(cleaned_data, pattern_name, result)
-            results[pattern_name] = {
-                'pattern_points': result,
-                'signals': signals,
-                'timestamp': datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+        try:
+            # Identify pattern components (simplified)
+            left_shoulder_idx = pattern_indices[0]
+            head_idx = pattern_indices[len(pattern_indices)//2]
+            right_shoulder_idx = pattern_indices[-1]
+            
+            # Get volumes
+            left_vol = data['Volume'].iloc[left_shoulder_idx]
+            head_vol = data['Volume'].iloc[head_idx]
+            right_vol = data['Volume'].iloc[right_shoulder_idx]
+            avg_vol = data['Volume'].mean()
+            
+            # Validation rules
+            checks = {
+                'head_volume_high': head_vol > avg_vol * 1.2,
+                'right_shoulder_lower': right_vol < left_vol * 0.9,
+                'volume_declining': right_vol < avg_vol
             }
+            
+            passed = sum(checks.values())
+            reliability = passed / len(checks)
+            
+            return reliability > 0.6, {
+                'reliability_score': reliability,
+                'volume_pattern': 'valid' if reliability > 0.6 else 'weak',
+                'checks': checks
+            }
+            
+        except Exception as e:
+            logger.error(f"Volume validation error: {e}")
+            return False, "Validation error"
     
-    return results
+    def validate_double_top_volume(self, data, pattern_indices):
+        """
+        Validate Double Top volume pattern:
+        - Second peak should have lower volume than first
+        - Volume should increase on breakdown
+        """
+        if len(pattern_indices) < 2:
+            return False, "Insufficient pattern points"
+        
+        try:
+            first_peak_idx = pattern_indices[0]
+            second_peak_idx = pattern_indices[-1]
+            
+            first_vol = data['Volume'].iloc[first_peak_idx]
+            second_vol = data['Volume'].iloc[second_peak_idx]
+            avg_vol = data['Volume'].mean()
+            
+            checks = {
+                'second_peak_lower_volume': second_vol < first_vol * 0.85,
+                'first_peak_above_average': first_vol > avg_vol,
+                'volume_divergence': second_vol < avg_vol * 0.9
+            }
+            
+            passed = sum(checks.values())
+            reliability = passed / len(checks)
+            
+            return reliability > 0.5, {
+                'reliability_score': reliability,
+                'volume_pattern': 'valid' if reliability > 0.5 else 'weak',
+                'checks': checks
+            }
+            
+        except Exception as e:
+            logger.error(f"Volume validation error: {e}")
+            return False, "Validation error"
+    
+    def get_comprehensive_volume_score(self, data, pattern_info):
+        """Get comprehensive volume score using both built-in and enhanced methods"""
+        if not VOLUME_MODULE_AVAILABLE:
+            # Fallback to basic volume validation
+            return self.get_basic_volume_score(data, pattern_info)
+        
+        # Use enhanced volume confirmation
+        pattern_start = pattern_info.get('start_idx', max(0, len(data) - 50))
+        pattern_end = pattern_info.get('end_idx', len(data) - 1)
+        
+        # Get pattern data
+        pattern_data = data.iloc[pattern_start:pattern_end + 1].copy()
+        
+        # Calculate volume metrics
+        pattern_data = self.volume_analyzer.calculate_volume_metrics(pattern_data)
+        
+        # Get pattern direction
+        pattern_type = pattern_info.get('pattern_type', '').lower()
+        if 'bottom' in pattern_type or 'inverse' in pattern_type:
+            direction = 'BULLISH'
+        elif 'top' in pattern_type or 'head' in pattern_type:
+            direction = 'BEARISH'
+        else:
+            direction = 'NEUTRAL'
+        
+        # Get volume score
+        volume_score = self.volume_analyzer.get_volume_signal_strength(
+            pattern_data,
+            direction,
+            pattern_type
+        )
+        
+        return volume_score
+    
+    def get_basic_volume_score(self, data, pattern_info):
+        """Basic volume scoring when enhanced module not available"""
+        pattern_idx = pattern_info.get('end_idx', len(data) - 1)
+        
+        # Recent volume vs average
+        recent_volume = data['Volume'].iloc[-5:].mean()
+        avg_volume = data['Volume'].iloc[-20:].mean()
+        volume_ratio = recent_volume / avg_volume if avg_volume > 0 else 1.0
+        
+        # Score based on ratio
+        if volume_ratio > 1.5:
+            return 0.8
+        elif volume_ratio > 1.2:
+            return 0.6
+        elif volume_ratio < 0.5:
+            return 0.2
+        else:
+            return 0.5
+    
+    def enhance_pattern_data(self, data, patterns):
+        """Add enhanced metrics to patterns"""
+        # Calculate metrics
+        atr = self.calculate_atr(data)
+        vwap = self.calculate_vwap(data)
+        threshold = self.calculate_volatility_threshold(data)
+        
+        # Calculate volume metrics if available
+        if VOLUME_MODULE_AVAILABLE and 'Volume' in data.columns:
+            data = self.volume_analyzer.calculate_volume_metrics(data)
+        
+        enhanced_patterns = []
+        
+        for pattern in patterns:
+            pattern_idx = data.index.get_loc(pattern['timestamp'])
+            
+            # Add market context
+            pattern['atr'] = atr[pattern_idx] if pattern_idx < len(atr) else None
+            pattern['vwap'] = vwap.iloc[pattern_idx] if pattern_idx < len(vwap) else None
+            pattern['vwap_deviation'] = ((pattern['price'] - pattern['vwap']) / pattern['vwap'] * 100) if pattern['vwap'] else None
+            pattern['volatility_threshold'] = threshold
+            
+            # Volume validation for chart patterns
+            if pattern['pattern_type'] == 'chart':
+                volume_valid = False
+                volume_info = {}
+                
+                # Get pattern indices (simplified - in real implementation, get from pattern detector)
+                pattern_window = 20  # Look back 20 bars
+                start_idx = max(0, pattern_idx - pattern_window)
+                pattern_indices = list(range(start_idx, pattern_idx + 1))
+                
+                if 'Head and Shoulder' in pattern['pattern_name']:
+                    volume_valid, volume_info = self.validate_head_shoulders_volume(
+                        data.iloc[start_idx:pattern_idx+1], 
+                        list(range(len(pattern_indices)))
+                    )
+                elif 'Double Top' in pattern['pattern_name'] or 'Double Bottom' in pattern['pattern_name']:
+                    volume_valid, volume_info = self.validate_double_top_volume(
+                        data.iloc[start_idx:pattern_idx+1],
+                        list(range(len(pattern_indices)))
+                    )
+                
+                pattern['volume_validated'] = volume_valid
+                pattern['volume_info'] = volume_info
+                
+                # Adjust confidence based on volume
+                if volume_valid and isinstance(volume_info, dict):
+                    reliability_boost = volume_info.get('reliability_score', 0) * 10
+                    pattern['adjusted_confidence'] = min(pattern['confidence'] + reliability_boost, 100)
+                else:
+                    pattern['adjusted_confidence'] = pattern['confidence'] * 0.8  # Reduce confidence
+            else:
+                pattern['adjusted_confidence'] = pattern['confidence']
+            
+            enhanced_patterns.append(pattern)
+        
+        return enhanced_patterns
 
-if __name__ == "__main__":
-    # Test the scanner
-    ticker = "NVDA"
-    results = scan_patterns(ticker)
+class EnhancedPatternEvaluator:
+    """Enhanced evaluator with look-ahead bias prevention"""
     
-    if results:
-        print(f"\nPatterns found for {ticker}:")
-        for pattern_name, pattern_data in results.items():
-            print(f"\n{pattern_name}:")
-            print(f"  Action: {pattern_data['signals']['action']}")
-            print(f"  Entry: ${pattern_data['signals']['entry']}")
-            print(f"  Stop Loss: ${pattern_data['signals']['stop_loss']}")
-            print(f"  Target: ${pattern_data['signals']['target']}")
-            print(f"  Risk/Reward: {pattern_data['signals']['risk_reward']}")
-            print(f"  Confidence: {pattern_data['signals']['confidence']}%")
+    def evaluate_pattern_safe(self, pattern, price_data, horizon_minutes=60):
+        """Evaluate pattern performance with strict look-ahead prevention"""
+        pattern_time = pattern['timestamp']
+        pattern_idx = None
+        
+        # Find exact pattern index
+        try:
+            pattern_idx = price_data.index.get_loc(pattern_time)
+        except KeyError:
+            # Find nearest index
+            time_diffs = abs(price_data.index - pattern_time)
+            pattern_idx = time_diffs.argmin()
+        
+        # Calculate horizon in bars (5-minute bars)
+        horizon_bars = horizon_minutes // 5
+        
+        # Strict boundary check
+        end_idx = pattern_idx + horizon_bars
+        if end_idx >= len(price_data):
+            return {
+                'success': None,
+                'price_change': None,
+                'reason': 'Insufficient future data',
+                'bars_available': len(price_data) - pattern_idx - 1,
+                'bars_needed': horizon_bars
+            }
+        
+        # Get entry and exit prices
+        entry_price = price_data['Close'].iloc[pattern_idx]
+        future_prices = price_data.iloc[pattern_idx + 1:end_idx + 1]  # Exclude entry bar
+        
+        if len(future_prices) == 0:
+            return {'success': None, 'price_change': None, 'reason': 'No future data'}
+        
+        # Calculate price change
+        exit_price = future_prices['Close'].iloc[-1]
+        price_change_pct = ((exit_price - entry_price) / entry_price) * 100
+        
+        # Use dynamic threshold
+        threshold = pattern.get('volatility_threshold', 0.5)
+        
+        # Determine success based on pattern direction and threshold
+        if pattern['direction'] == 'bullish':
+            success = price_change_pct > threshold
+            max_favorable = ((future_prices['High'].max() - entry_price) / entry_price) * 100
+            max_adverse = ((entry_price - future_prices['Low'].min()) / entry_price) * 100
+        elif pattern['direction'] == 'bearish':
+            success = price_change_pct < -threshold
+            max_favorable = ((entry_price - future_prices['Low'].min()) / entry_price) * 100
+            max_adverse = ((future_prices['High'].max() - entry_price) / entry_price) * 100
+        else:  # neutral
+            success = abs(price_change_pct) <= threshold
+            max_favorable = abs(price_change_pct)
+            max_adverse = 0
+        
+        return {
+            'success': success,
+            'price_change': round(price_change_pct, 3),
+            'threshold_used': round(threshold, 3),
+            'max_favorable': round(max_favorable, 3),
+            'max_adverse': round(max_adverse, 3),
+            'entry_price': round(entry_price, 2),
+            'exit_price': round(exit_price, 2),
+            'horizon_minutes': horizon_minutes,
+            'pattern_idx': pattern_idx,
+            'exit_idx': end_idx
+        }
+
+def calculate_signal_quality_score(pattern, market_data):
+    """Calculate comprehensive signal quality score"""
+    score = 0
+    max_score = 100
+    
+    # Base confidence (30 points)
+    confidence_score = (pattern.get('adjusted_confidence', pattern['confidence']) / 100) * 30
+    score += confidence_score
+    
+    # Volume validation (25 points)
+    if pattern.get('volume_validated', False):
+        volume_score = pattern.get('volume_info', {}).get('reliability_score', 0) * 25
+        score += volume_score
+    elif pattern['pattern_type'] == 'candlestick':
+        # Candlestick patterns get partial credit
+        score += 15
+    
+    # VWAP alignment (20 points)
+    vwap_dev = pattern.get('vwap_deviation', 0)
+    if vwap_dev is not None:
+        if pattern['direction'] == 'bullish' and vwap_dev < 0:  # Below VWAP, good for longs
+            score += min(abs(vwap_dev) * 4, 20)
+        elif pattern['direction'] == 'bearish' and vwap_dev > 0:  # Above VWAP, good for shorts
+            score += min(vwap_dev * 4, 20)
+    
+    # ATR context (15 points) - Higher volatility = stronger signals needed
+    atr_ratio = pattern.get('atr', 0) / market_data.get('current_price', 1) * 100
+    if atr_ratio > 2:  # High volatility environment
+        score += 15
+    elif atr_ratio > 1:
+        score += 10
     else:
-        print(f"No patterns found for {ticker}")
+        score += 5
+    
+    # Pattern rarity (10 points) - Less common patterns score higher
+    rare_patterns = ['Three Black Crows', 'Three White Soldiers', 'Morning Star', 'Evening Star']
+    if pattern['pattern_name'] in rare_patterns:
+        score += 10
+    elif pattern['pattern_type'] == 'chart':
+        score += 7
+    else:
+        score += 3
+    
+    return min(score, max_score)
