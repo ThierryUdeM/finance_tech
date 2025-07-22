@@ -22,6 +22,7 @@ on:
           - scan
           - evaluate
           - both
+          - end-of-day
       ticker:
         description: 'Stock ticker'
         required: true
@@ -173,10 +174,11 @@ jobs:
 
   end-of-day-evaluation:
     if: |
-      github.event_name == 'schedule' && 
-      (contains(github.event.schedule, '30 21') || contains(github.event.schedule, '30 20'))
+      (github.event_name == 'schedule' && 
+      (contains(github.event.schedule, '30 21') || contains(github.event.schedule, '30 20'))) ||
+      (github.event_name == 'workflow_dispatch' && github.event.inputs.action == 'end-of-day')
     runs-on: ubuntu-latest
-    # Run at 4:30 PM ET (after market close)
+    # Run at 4:30 PM ET (after market close) or when manually triggered
     
     steps:
     - name: Checkout repository
