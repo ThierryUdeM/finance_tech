@@ -291,6 +291,10 @@ jobs:
     runs-on: ubuntu-latest
     # Run at 4:30 PM ET (after market close) or when manually triggered
     
+    permissions:
+      contents: read
+      issues: write  # Required for creating issues
+    
     steps:
     - name: Checkout repository
       uses: actions/checkout@v4
