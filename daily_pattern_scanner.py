@@ -45,15 +45,18 @@ except ImportError as e:
 load_dotenv('config/.env')
 
 class DailyPatternScanner:
-    def __init__(self):
+    def __init__(self, ticker=None):
         # Azure configuration
         self.storage_account = os.getenv('AZURE_STORAGE_ACCOUNT')
         self.storage_key = os.getenv('AZURE_STORAGE_KEY')
         self.container_name = os.getenv('AZURE_CONTAINER_NAME')
         
+        # Ticker configuration
+        self.ticker = ticker or os.getenv('TICKER', 'NVDA')
+        
         # Check for mode override
         self.pattern_mode = os.getenv('PATTERN_MODE', 'daily')
-        self.azure_folder = os.getenv('AZURE_FOLDER', 'next_day_technical')
+        self.azure_folder = f"next_day_technical/{self.ticker.lower()}"
         
         if not all([self.storage_account, self.storage_key, self.container_name]):
             raise ValueError("Azure storage credentials not found")
@@ -64,7 +67,50 @@ class DailyPatternScanner:
             credential=self.storage_key
         )
         
-        # Pattern holding periods (in days)
+        # Ticker-specific volatility configurations
+        self.ticker_configs = {
+            'NVDA': {
+                'name': 'NVIDIA Corporation',
+                'volatility_threshold': 2.0,
+                'volume_multiplier': 1.5,
+                'pattern_confidence_boost': 1.0
+            },
+            'AAPL': {
+                'name': 'Apple Inc.',
+                'volatility_threshold': 1.2,
+                'volume_multiplier': 1.3,
+                'pattern_confidence_boost': 0.9
+            },
+            'MSFT': {
+                'name': 'Microsoft Corporation',
+                'volatility_threshold': 1.3,
+                'volume_multiplier': 1.4,
+                'pattern_confidence_boost': 0.9
+            },
+            'TSLA': {
+                'name': 'Tesla Inc.',
+                'volatility_threshold': 2.5,
+                'volume_multiplier': 1.6,
+                'pattern_confidence_boost': 1.1
+            },
+            'BTC-USD': {
+                'name': 'Bitcoin',
+                'volatility_threshold': 3.0,
+                'volume_multiplier': 1.2,
+                'pattern_confidence_boost': 1.2
+            },
+            'AC.TO': {
+                'name': 'Air Canada',
+                'volatility_threshold': 2.0,
+                'volume_multiplier': 1.4,
+                'pattern_confidence_boost': 1.0
+            }
+        }
+        
+        # Get current ticker config
+        self.current_config = self.ticker_configs.get(self.ticker, self.ticker_configs['NVDA'])
+        
+        # Pattern holding periods (in days) - can be ticker-specific
         self.pattern_holding_periods = {
             'Hammer': 2,
             'Inverted Hammer': 2,
@@ -153,15 +199,20 @@ class DailyPatternScanner:
                             else:
                                 signal = signal_type
                             
+                            # Apply ticker-specific confidence boost
+                            base_strength = abs(pattern_value) / 100
+                            adjusted_strength = min(1.0, base_strength * self.current_config['pattern_confidence_boost'])
+                            
                             patterns.append({
                                 'timestamp': data.index[idx],
                                 'pattern': pattern_name,
                                 'type': 'candlestick',
                                 'signal': signal,
-                                'strength': abs(pattern_value) / 100,
+                                'strength': adjusted_strength,
                                 'price': close_prices[idx],
                                 'volume': data['Volume'].iloc[idx],
-                                'holding_days': self.pattern_holding_periods.get(pattern_name, 3)
+                                'holding_days': self.pattern_holding_periods.get(pattern_name, 3),
+                                'ticker': self.ticker
                             })
             except Exception as e:
                 logger.error(f"Error detecting {pattern_name}: {e}")
@@ -192,15 +243,20 @@ class DailyPatternScanner:
                     pattern_name = pattern['Pattern']
                     signal = 'bearish' if pattern_name == 'Head and Shoulder' else 'bullish'
                     
+                    # Apply ticker-specific confidence boost
+                    base_strength = 0.8  # Chart patterns are generally strong
+                    adjusted_strength = min(1.0, base_strength * self.current_config['pattern_confidence_boost'])
+                    
                     patterns.append({
                         'timestamp': pattern['Date'],
                         'pattern': pattern_name,
                         'type': 'chart',
                         'signal': signal,
-                        'strength': 0.8,  # Chart patterns are generally strong
+                        'strength': adjusted_strength,
                         'price': data.loc[pattern['Date'], 'Close'],
                         'volume': data.loc[pattern['Date'], 'Volume'],
-                        'holding_days': self.pattern_holding_periods.get(pattern_name, 5)
+                        'holding_days': self.pattern_holding_periods.get(pattern_name, 5),
+                        'ticker': self.ticker
                     })
         except Exception as e:
             logger.error(f"Error detecting Head & Shoulders: {e}")
@@ -213,15 +269,20 @@ class DailyPatternScanner:
                     pattern_name = pattern['Pattern']
                     signal = 'bearish' if pattern_name == 'Double Top' else 'bullish'
                     
+                    # Apply ticker-specific confidence boost
+                    base_strength = 0.8
+                    adjusted_strength = min(1.0, base_strength * self.current_config['pattern_confidence_boost'])
+                    
                     patterns.append({
                         'timestamp': pattern['Date'],
                         'pattern': pattern_name,
                         'type': 'chart',
                         'signal': signal,
-                        'strength': 0.8,
+                        'strength': adjusted_strength,
                         'price': data.loc[pattern['Date'], 'Close'],
                         'volume': data.loc[pattern['Date'], 'Volume'],
-                        'holding_days': self.pattern_holding_periods.get(pattern_name, 5)
+                        'holding_days': self.pattern_holding_periods.get(pattern_name, 5),
+                        'ticker': self.ticker
                     })
         except Exception as e:
             logger.error(f"Error detecting Double Top/Bottom: {e}")
@@ -234,15 +295,20 @@ class DailyPatternScanner:
                     pattern_name = pattern['Pattern']
                     signal = 'bullish' if 'Ascending' in pattern_name else 'bearish'
                     
+                    # Apply ticker-specific confidence boost
+                    base_strength = 0.7
+                    adjusted_strength = min(1.0, base_strength * self.current_config['pattern_confidence_boost'])
+                    
                     patterns.append({
                         'timestamp': pattern['Date'],
                         'pattern': pattern_name,
                         'type': 'chart',
                         'signal': signal,
-                        'strength': 0.7,
+                        'strength': adjusted_strength,
                         'price': data.loc[pattern['Date'], 'Close'],
                         'volume': data.loc[pattern['Date'], 'Volume'],
-                        'holding_days': self.pattern_holding_periods.get(pattern_name, 3)
+                        'holding_days': self.pattern_holding_periods.get(pattern_name, 3),
+                        'ticker': self.ticker
                     })
         except Exception as e:
             logger.error(f"Error detecting Triangle patterns: {e}")
@@ -250,7 +316,7 @@ class DailyPatternScanner:
         return patterns
     
     def calculate_volume_confirmation(self, data, pattern_idx):
-        """Calculate volume confirmation for pattern"""
+        """Calculate volume confirmation for pattern using ticker-specific thresholds"""
         if pattern_idx < 20:  # Need history for volume analysis
             return 0.5
         
@@ -259,25 +325,30 @@ class DailyPatternScanner:
         
         volume_ratio = current_volume / avg_volume if avg_volume > 0 else 1.0
         
-        # Strong volume confirmation
-        if volume_ratio > 1.5:
+        # Apply ticker-specific volume multiplier
+        volume_multiplier = self.current_config['volume_multiplier']
+        
+        # Strong volume confirmation (adjusted for ticker volatility)
+        if volume_ratio > (1.5 * volume_multiplier):
             return 0.9
-        elif volume_ratio > 1.2:
+        elif volume_ratio > (1.2 * volume_multiplier):
             return 0.7
-        elif volume_ratio > 0.8:
+        elif volume_ratio > (0.8 * volume_multiplier):
             return 0.5
         else:
             return 0.3
     
-    def scan_daily_patterns(self, ticker):
+    def scan_daily_patterns(self, ticker=None):
         """Scan for daily patterns"""
-        logger.info(f"Scanning daily patterns for {ticker}")
+        # Use instance ticker if none provided
+        scan_ticker = ticker or self.ticker
+        logger.info(f"Scanning daily patterns for {scan_ticker}")
         
         # Get daily data (100 days for pattern detection)
-        data = yf.download(ticker, period='100d', interval='1d', progress=False)
+        data = yf.download(scan_ticker, period='100d', interval='1d', progress=False)
         
         if data.empty:
-            logger.error(f"No data retrieved for {ticker}")
+            logger.error(f"No data retrieved for {scan_ticker}")
             return []
         
         # Clean data
@@ -297,9 +368,9 @@ class DailyPatternScanner:
         all_patterns.extend(chart_patterns)
         logger.info(f"Found {len(chart_patterns)} chart patterns")
         
-        # Add ticker and volume confirmation
+        # Add ticker and volume confirmation (ticker already added in pattern detection)
         for pattern in all_patterns:
-            pattern['ticker'] = ticker
+            pattern['ticker'] = scan_ticker
             # Find pattern index
             pattern_idx = data.index.get_loc(pattern['timestamp'])
             pattern['volume_confirmation'] = self.calculate_volume_confirmation(data, pattern_idx)
@@ -467,16 +538,16 @@ class DailyPatternScanner:
 
 def main():
     """Main function for GitHub Actions"""
-    scanner = DailyPatternScanner()
-    
     # Get ticker from environment or default
     ticker = os.getenv('TICKER', 'NVDA')
-    tickers = [ticker] if ticker != 'ALL' else ['NVDA', 'AAPL', 'MSFT', 'GOOGL', 'AMZN']
     
-    # Run scan
-    patterns = scanner.run_daily_scan(tickers)
+    # Create scanner for specific ticker
+    scanner = DailyPatternScanner(ticker=ticker)
     
-    logger.info("Daily pattern scan completed successfully")
+    # Run scan for single ticker
+    patterns = scanner.run_daily_scan([ticker])
+    
+    logger.info(f"Daily pattern scan completed successfully for {ticker}")
     return 0
 
 

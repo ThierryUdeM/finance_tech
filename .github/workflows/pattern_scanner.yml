@@ -1,13 +1,10 @@
-name: Daily Pattern Scanner and Morning Alert
+name: Daily Pattern Scanner - NVDA
 
 on:
   schedule:
-    # Run scanner at 3:55 PM ET (just before market close) for daily patterns
-    - cron: '55 20 * * 1-5'  # EDT: 3:55 PM ET = 8:55 PM UTC
-    - cron: '55 21 * * 1-5'  # EST: 3:55 PM ET = 9:55 PM UTC
-    # Run evaluator at 4:30 PM ET (after market close)
-    - cron: '30 20 * * 1-5'  # EDT: 4:30 PM ET = 8:30 PM UTC
-    - cron: '30 21 * * 1-5'  # EST: 4:30 PM ET = 9:30 PM UTC
+    # Run at 4:30 PM ET daily (after market close) - NVDA baseline
+    - cron: '30 20 * * 1-5'  # EST: 4:30 PM ET
+    - cron: '30 21 * * 1-5'  # EDT: 4:30 PM ET
     # Morning alert at 9:15 AM ET (before market open)
     - cron: '15 13 * * 1-5'  # EDT: 9:15 AM ET = 1:15 PM UTC
     - cron: '15 14 * * 1-5'  # EST: 9:15 AM ET = 2:15 PM UTC
@@ -145,7 +142,7 @@ jobs:
     - name: Run daily pattern scanner
       run: |
         export LD_LIBRARY_PATH=/usr/lib:/usr/lib64:/usr/local/lib:$LD_LIBRARY_PATH
-        export TICKER="${{ github.event.inputs.ticker || 'NVDA' }}"
+        export TICKER="NVDA"
         python daily_pattern_scanner.py
     
     - name: Upload logs

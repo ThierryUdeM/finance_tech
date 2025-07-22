@@ -1,0 +1,135 @@
+name: Daily Pattern Scanner - BTC-USD
+
+on:
+  schedule:
+    # Run at 4:36 PM ET daily (after market close) - staggered 6 minutes after NVDA
+    # Note: BTC trades 24/7, but we align with US market close for pattern consistency
+    - cron: '36 20 * * 1-5'  # EST: 4:36 PM ET
+    - cron: '36 21 * * 1-5'  # EDT: 4:36 PM ET
+  
+  workflow_dispatch:  # Allow manual trigger
+
+jobs:
+  scan-daily-patterns:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+    
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.10'
+    
+    - name: Install system dependencies
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y build-essential
+    
+    - name: Install TA-Lib
+      run: |
+        wget http://prdownloads.sourceforge.net/ta-lib/ta-lib-0.4.0-src.tar.gz
+        tar -xzf ta-lib-0.4.0-src.tar.gz
+        cd ta-lib/
+        ./configure --prefix=/usr
+        make
+        sudo make install
+        sudo ldconfig
+    
+    - name: Install Python dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install yfinance pandas numpy azure-storage-blob python-dotenv
+        pip install TA-Lib tradingpatterns
+    
+    - name: Create config directory and .env file
+      run: |
+        mkdir -p config
+        cat > config/.env << EOF
+        AZURE_STORAGE_ACCOUNT=${{ secrets.STORAGE_ACCOUNT_NAME }}
+        AZURE_STORAGE_KEY=${{ secrets.ACCESS_KEY }}
+        AZURE_CONTAINER_NAME=${{ secrets.CONTAINER_NAME }}
+        EOF
+    
+    - name: Run daily pattern scanner for BTC-USD
+      run: |
+        export TICKER="BTC-USD"
+        python daily_pattern_scanner.py
+    
+    - name: Upload logs
+      if: always()
+      uses: actions/upload-artifact@v4
+      with:
+        name: btc-daily-pattern-logs-${{ github.run_id }}
+        path: |
+          *.log
+          *.json
+        if-no-files-found: warn
+        retention-days: 7
+
+  performance-summary:
+    runs-on: ubuntu-latest
+    # Run at 4:51 PM ET daily to generate performance report (staggered after scan)
+    if: |
+      github.event_name == 'schedule' && 
+      (contains(github.event.schedule, '51 20') || contains(github.event.schedule, '51 21'))
+    
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+    
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.10'
+    
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install pandas azure-storage-blob python-dotenv
+    
+    - name: Create config directory and .env file
+      run: |
+        mkdir -p config
+        cat > config/.env << EOF
+        AZURE_STORAGE_ACCOUNT=${{ secrets.STORAGE_ACCOUNT_NAME }}
+        AZURE_STORAGE_KEY=${{ secrets.ACCESS_KEY }}
+        AZURE_CONTAINER_NAME=${{ secrets.CONTAINER_NAME }}
+        EOF
+    
+    - name: Generate performance summary for BTC-USD
+      run: |
+        export TICKER="BTC-USD"
+        python -c "
+        from daily_pattern_scanner import DailyPatternScanner
+        scanner = DailyPatternScanner(ticker='BTC-USD')
+        evaluations = scanner.load_or_create_evaluation_file()
+        total_evals = len(evaluations)
+        if total_evals > 0:
+            recent_evals = evaluations[-30:] if total_evals > 30 else evaluations
+            buy_signals = sum(1 for e in recent_evals if e.get('recommendation') == 'BUY')
+            sell_signals = sum(1 for e in recent_evals if e.get('recommendation') == 'SELL')
+            hold_signals = sum(1 for e in recent_evals if e.get('recommendation') == 'HOLD')
+            avg_confidence = sum(e.get('confidence', 0) for e in recent_evals) / len(recent_evals)
+            print('BTC-USD Daily Pattern Summary (Last 30 days):')
+            print(f'Total Evaluations: {len(recent_evals)}')
+            print(f'Buy: {buy_signals}, Sell: {sell_signals}, Hold: {hold_signals}')
+            print(f'Average Confidence: {avg_confidence:.1%}')
+        else:
+            print('No evaluation data available yet')
+        "
+    
+    - name: Create issue with daily summary
+      if: success()
+      uses: actions/github-script@v7
+      with:
+        script: |
+          const date = new Date().toISOString().split('T')[0];
+          github.rest.issues.create({
+            owner: context.repo.owner,
+            repo: context.repo.repo,
+            title: `Daily Pattern Scanner Summary - BTC-USD - ${date}`,
+            body: 'Today\'s BTC-USD daily chart patterns have been analyzed. Check the next_day_technical/btc-usd/ folder in Azure for detailed predictions.',
+            labels: ['automated', 'daily-report', 'pattern-scanner', 'btc']
+          });
