@@ -120,15 +120,14 @@ jobs:
         python -m pip install --upgrade pip wheel
         
         # Install all requirements except TA-Lib first
-        grep -v "TA-Lib" requirements_pattern_scanner.txt > requirements_no_talib.txt
+        grep -v -E "TA-Lib|tradingpatterns" requirements_pattern_scanner.txt > requirements_no_talib.txt
         pip install -r requirements_no_talib.txt
         
         # Install TA-Lib Python wrapper - use older version compatible with TA-Lib 0.4.0
         pip install --no-cache-dir TA-Lib==0.4.19
         
-        # Verify both libraries are installed
+        # Verify TA-Lib is installed
         python -c "import talib; print(f'TA-Lib version: {talib.__version__}')"
-        python -c "from tradingpatterns.tradingpatterns import detect_head_shoulder; print('TradingPatternScanner imported successfully')"
     
     - name: Create config directory and .env file
       run: |
@@ -212,15 +211,14 @@ jobs:
         python -m pip install --upgrade pip wheel
         
         # Install all requirements except TA-Lib first
-        grep -v "TA-Lib" requirements_pattern_scanner.txt > requirements_no_talib.txt
+        grep -v -E "TA-Lib|tradingpatterns" requirements_pattern_scanner.txt > requirements_no_talib.txt
         pip install -r requirements_no_talib.txt
         
         # Install TA-Lib Python wrapper - use older version compatible with TA-Lib 0.4.0
         pip install --no-cache-dir TA-Lib==0.4.19
         
-        # Verify both libraries are installed
+        # Verify TA-Lib is installed
         python -c "import talib; print(f'TA-Lib version: {talib.__version__}')"
-        python -c "from tradingpatterns.tradingpatterns import detect_head_shoulder; print('TradingPatternScanner imported successfully')"
     
     - name: Create config directory and .env file
       run: |
@@ -342,15 +340,14 @@ jobs:
         python -m pip install --upgrade pip wheel
         
         # Install all requirements except TA-Lib first
-        grep -v "TA-Lib" requirements_pattern_scanner.txt > requirements_no_talib.txt
+        grep -v -E "TA-Lib|tradingpatterns" requirements_pattern_scanner.txt > requirements_no_talib.txt
         pip install -r requirements_no_talib.txt
         
         # Install TA-Lib Python wrapper - use older version compatible with TA-Lib 0.4.0
         pip install --no-cache-dir TA-Lib==0.4.19
         
-        # Verify both libraries are installed
-        python -c "import talib; print(f'TA-Lib version: {talib.__version__}')"
-        python -c "from tradingpatterns.tradingpatterns import detect_head_shoulder; print('TradingPatternScanner imported successfully')" matplotlib
+        # Verify TA-Lib is installed
+        python -c "import talib; print(f'TA-Lib version: {talib.__version__}')" matplotlib
     
     - name: Create config directory and .env file
       run: |
