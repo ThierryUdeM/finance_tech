@@ -4,27 +4,28 @@ __pycache__/
 *$py.class
 *.so
 .Python
-venv/
-ENV/
 env/
+venv/
+*.egg-info/
 
-# Environment files
-config/.env
-.env
-
-# Logs
+# Temporary files
+temp_charts/
 *.log
+*.tmp
 
-# OS
-.DS_Store
-Thumbs.db
+# Local environment
+.env
+config/.env
 
 # IDE
 .vscode/
 .idea/
 *.swp
-*.swo
 
-# Test files
-test_*.py
-*.test.py
+# OS
+.DS_Store
+Thumbs.db
+
+# Azure
+*.backup
+local_test/
