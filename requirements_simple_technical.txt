@@ -1,0 +1,9 @@
+# Requirements for Simple Technical Scanner (Intraday)
+yfinance>=0.2.28
+pandas>=1.5.3
+numpy>=1.24.3
+azure-storage-blob>=12.19.0
+python-dotenv>=1.0.0
+
+# Note: This scanner does NOT require TA-Lib or tradingpatterns
+# It uses only built-in pandas/numpy calculations for better performance
