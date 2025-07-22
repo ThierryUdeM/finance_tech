@@ -1,0 +1,2 @@
+# Optional packages - may fail to install
+tradingpatterns>=0.0.1
