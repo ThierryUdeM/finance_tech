@@ -8,4 +8,3 @@ azure-storage-blob>=12.16.0
 python-dotenv>=1.0.0
 matplotlib>=3.7.1
 git+https://github.com/white07S/TradingPatternScanner.git
-TA-Lib>=0.4.24

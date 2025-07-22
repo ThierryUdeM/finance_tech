@@ -96,14 +96,30 @@ jobs:
         
         # Update library cache
         sudo ldconfig
+        
+        # Verify installation
+        ls -la /usr/lib/libta_lib*
+        ls -la /usr/include/ta-lib/
     
     - name: Install Python dependencies
       run: |
         python -m pip install --upgrade pip
-        pip install -r requirements_pattern_scanner.txt
         
-        # Try to install TA-Lib Python wrapper
-        pip install -r requirements_talib.txt || echo "TA-Lib Python installation failed, continuing without it"
+        # Set environment variables for TA-Lib
+        export LD_LIBRARY_PATH=/usr/lib:$LD_LIBRARY_PATH
+        export LIBRARY_PATH=/usr/lib:$LIBRARY_PATH
+        export C_INCLUDE_PATH=/usr/include:$C_INCLUDE_PATH
+        
+        # Install all requirements except TA-Lib first
+        grep -v "TA-Lib" requirements_pattern_scanner.txt > requirements_no_talib.txt
+        pip install -r requirements_no_talib.txt
+        
+        # Install TA-Lib Python wrapper separately to ensure it builds against our version
+        pip install --no-cache-dir TA-Lib
+        
+        # Verify both libraries are installed
+        python -c "import talib; print(f'TA-Lib version: {talib.__version__}')"
+        python -c "from tradingpatterns.tradingpatterns import detect_head_shoulder; print('TradingPatternScanner imported successfully')"
     
     - name: Create config directory and .env file
       run: |
@@ -116,6 +132,7 @@ jobs:
     
     - name: Run combined pattern scanner
       run: |
+        export LD_LIBRARY_PATH=/usr/lib:$LD_LIBRARY_PATH
         python combined_pattern_scanner_gh.py
     
     - name: Upload logs
@@ -160,14 +177,30 @@ jobs:
         
         # Update library cache
         sudo ldconfig
+        
+        # Verify installation
+        ls -la /usr/lib/libta_lib*
+        ls -la /usr/include/ta-lib/
     
     - name: Install Python dependencies
       run: |
         python -m pip install --upgrade pip
-        pip install -r requirements_pattern_scanner.txt
         
-        # Try to install TA-Lib Python wrapper
-        pip install -r requirements_talib.txt || echo "TA-Lib Python installation failed, continuing without it"
+        # Set environment variables for TA-Lib
+        export LD_LIBRARY_PATH=/usr/lib:$LD_LIBRARY_PATH
+        export LIBRARY_PATH=/usr/lib:$LIBRARY_PATH
+        export C_INCLUDE_PATH=/usr/include:$C_INCLUDE_PATH
+        
+        # Install all requirements except TA-Lib first
+        grep -v "TA-Lib" requirements_pattern_scanner.txt > requirements_no_talib.txt
+        pip install -r requirements_no_talib.txt
+        
+        # Install TA-Lib Python wrapper separately to ensure it builds against our version
+        pip install --no-cache-dir TA-Lib
+        
+        # Verify both libraries are installed
+        python -c "import talib; print(f'TA-Lib version: {talib.__version__}')"
+        python -c "from tradingpatterns.tradingpatterns import detect_head_shoulder; print('TradingPatternScanner imported successfully')"
     
     - name: Create config directory and .env file
       run: |
@@ -180,6 +213,7 @@ jobs:
     
     - name: Evaluate patterns
       run: |
+        export LD_LIBRARY_PATH=/usr/lib:$LD_LIBRARY_PATH
         python pattern_evaluator.py
     
     - name: Upload evaluation results
@@ -225,14 +259,30 @@ jobs:
         
         # Update library cache
         sudo ldconfig
+        
+        # Verify installation
+        ls -la /usr/lib/libta_lib*
+        ls -la /usr/include/ta-lib/
     
     - name: Install Python dependencies
       run: |
         python -m pip install --upgrade pip
-        pip install -r requirements_pattern_scanner.txt
         
-        # Try to install TA-Lib Python wrapper
-        pip install -r requirements_talib.txt || echo "TA-Lib Python installation failed, continuing without it" matplotlib
+        # Set environment variables for TA-Lib
+        export LD_LIBRARY_PATH=/usr/lib:$LD_LIBRARY_PATH
+        export LIBRARY_PATH=/usr/lib:$LIBRARY_PATH
+        export C_INCLUDE_PATH=/usr/include:$C_INCLUDE_PATH
+        
+        # Install all requirements except TA-Lib first
+        grep -v "TA-Lib" requirements_pattern_scanner.txt > requirements_no_talib.txt
+        pip install -r requirements_no_talib.txt
+        
+        # Install TA-Lib Python wrapper separately to ensure it builds against our version
+        pip install --no-cache-dir TA-Lib
+        
+        # Verify both libraries are installed
+        python -c "import talib; print(f'TA-Lib version: {talib.__version__}')"
+        python -c "from tradingpatterns.tradingpatterns import detect_head_shoulder; print('TradingPatternScanner imported successfully')" matplotlib
     
     - name: Create config directory and .env file
       run: |
@@ -247,6 +297,7 @@ jobs:
       run: |
         echo "=== End of Day Pattern Evaluation ==="
         echo "Evaluating all patterns detected during today's trading session"
+        export LD_LIBRARY_PATH=/usr/lib:$LD_LIBRARY_PATH
         python pattern_evaluator.py
     
     - name: Create issue with daily report
