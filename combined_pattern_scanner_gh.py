@@ -279,7 +279,7 @@ def main():
     scanner = CombinedPatternScanner()
     
     # Define tickers to scan
-    tickers = ['NVDA', 'AAPL', 'MSFT', 'GOOGL', 'TSLA', 'SPY', 'QQQ']
+    tickers = ['NVDA']
     
     # Scan patterns
     logger.info("Starting combined pattern scan")
