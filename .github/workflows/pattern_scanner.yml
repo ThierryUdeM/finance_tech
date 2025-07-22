@@ -90,31 +90,45 @@ jobs:
         tar -xzf ta-lib-0.4.0-src.tar.gz
         cd ta-lib/
         ./configure --prefix=/usr
-        make
+        make -j4
         sudo make install
         cd ..
         
-        # Update library cache
+        # Update library cache and create symlinks
         sudo ldconfig
+        
+        # Create additional symlinks to ensure library is found
+        sudo ln -sf /usr/lib/libta_lib.so.0.0.0 /usr/lib/libta_lib.so
+        sudo ln -sf /usr/lib/libta_lib.so.0.0.0 /usr/lib/libta_lib.so.0
         
         # Verify installation
         ls -la /usr/lib/libta_lib*
         ls -la /usr/include/ta-lib/
+        
+        # Test that library can be found
+        ldconfig -p | grep ta_lib
     
     - name: Install Python dependencies
       run: |
         python -m pip install --upgrade pip
         
-        # Set environment variables for TA-Lib
-        export LD_LIBRARY_PATH=/usr/lib:$LD_LIBRARY_PATH
-        export LIBRARY_PATH=/usr/lib:$LIBRARY_PATH
+        # Set comprehensive environment variables for TA-Lib
+        export LD_LIBRARY_PATH=/usr/lib:/usr/lib64:/usr/local/lib:$LD_LIBRARY_PATH
+        export LIBRARY_PATH=/usr/lib:/usr/lib64:/usr/local/lib:$LIBRARY_PATH
         export C_INCLUDE_PATH=/usr/include:$C_INCLUDE_PATH
+        export CFLAGS="-I/usr/include"
+        export LDFLAGS="-L/usr/lib"
+        export PKG_CONFIG_PATH=/usr/lib/pkgconfig:$PKG_CONFIG_PATH
+        
+        # Debug: Show environment
+        echo "LD_LIBRARY_PATH=$LD_LIBRARY_PATH"
+        echo "LIBRARY_PATH=$LIBRARY_PATH"
         
         # Install all requirements except TA-Lib first
         grep -v "TA-Lib" requirements_pattern_scanner.txt > requirements_no_talib.txt
         pip install -r requirements_no_talib.txt
         
-        # Install TA-Lib Python wrapper separately to ensure it builds against our version
+        # Install TA-Lib Python wrapper
         pip install --no-cache-dir TA-Lib
         
         # Verify both libraries are installed
@@ -132,7 +146,7 @@ jobs:
     
     - name: Run combined pattern scanner
       run: |
-        export LD_LIBRARY_PATH=/usr/lib:$LD_LIBRARY_PATH
+        export LD_LIBRARY_PATH=/usr/lib:/usr/lib64:/usr/local/lib:$LD_LIBRARY_PATH
         python combined_pattern_scanner_gh.py
     
     - name: Upload logs
@@ -171,31 +185,45 @@ jobs:
         tar -xzf ta-lib-0.4.0-src.tar.gz
         cd ta-lib/
         ./configure --prefix=/usr
-        make
+        make -j4
         sudo make install
         cd ..
         
-        # Update library cache
+        # Update library cache and create symlinks
         sudo ldconfig
+        
+        # Create additional symlinks to ensure library is found
+        sudo ln -sf /usr/lib/libta_lib.so.0.0.0 /usr/lib/libta_lib.so
+        sudo ln -sf /usr/lib/libta_lib.so.0.0.0 /usr/lib/libta_lib.so.0
         
         # Verify installation
         ls -la /usr/lib/libta_lib*
         ls -la /usr/include/ta-lib/
+        
+        # Test that library can be found
+        ldconfig -p | grep ta_lib
     
     - name: Install Python dependencies
       run: |
         python -m pip install --upgrade pip
         
-        # Set environment variables for TA-Lib
-        export LD_LIBRARY_PATH=/usr/lib:$LD_LIBRARY_PATH
-        export LIBRARY_PATH=/usr/lib:$LIBRARY_PATH
+        # Set comprehensive environment variables for TA-Lib
+        export LD_LIBRARY_PATH=/usr/lib:/usr/lib64:/usr/local/lib:$LD_LIBRARY_PATH
+        export LIBRARY_PATH=/usr/lib:/usr/lib64:/usr/local/lib:$LIBRARY_PATH
         export C_INCLUDE_PATH=/usr/include:$C_INCLUDE_PATH
+        export CFLAGS="-I/usr/include"
+        export LDFLAGS="-L/usr/lib"
+        export PKG_CONFIG_PATH=/usr/lib/pkgconfig:$PKG_CONFIG_PATH
+        
+        # Debug: Show environment
+        echo "LD_LIBRARY_PATH=$LD_LIBRARY_PATH"
+        echo "LIBRARY_PATH=$LIBRARY_PATH"
         
         # Install all requirements except TA-Lib first
         grep -v "TA-Lib" requirements_pattern_scanner.txt > requirements_no_talib.txt
         pip install -r requirements_no_talib.txt
         
-        # Install TA-Lib Python wrapper separately to ensure it builds against our version
+        # Install TA-Lib Python wrapper
         pip install --no-cache-dir TA-Lib
         
         # Verify both libraries are installed
@@ -213,7 +241,7 @@ jobs:
     
     - name: Evaluate patterns
       run: |
-        export LD_LIBRARY_PATH=/usr/lib:$LD_LIBRARY_PATH
+        export LD_LIBRARY_PATH=/usr/lib:/usr/lib64:/usr/local/lib:$LD_LIBRARY_PATH
         python pattern_evaluator.py
     
     - name: Upload evaluation results
@@ -253,31 +281,45 @@ jobs:
         tar -xzf ta-lib-0.4.0-src.tar.gz
         cd ta-lib/
         ./configure --prefix=/usr
-        make
+        make -j4
         sudo make install
         cd ..
         
-        # Update library cache
+        # Update library cache and create symlinks
         sudo ldconfig
+        
+        # Create additional symlinks to ensure library is found
+        sudo ln -sf /usr/lib/libta_lib.so.0.0.0 /usr/lib/libta_lib.so
+        sudo ln -sf /usr/lib/libta_lib.so.0.0.0 /usr/lib/libta_lib.so.0
         
         # Verify installation
         ls -la /usr/lib/libta_lib*
         ls -la /usr/include/ta-lib/
+        
+        # Test that library can be found
+        ldconfig -p | grep ta_lib
     
     - name: Install Python dependencies
       run: |
         python -m pip install --upgrade pip
         
-        # Set environment variables for TA-Lib
-        export LD_LIBRARY_PATH=/usr/lib:$LD_LIBRARY_PATH
-        export LIBRARY_PATH=/usr/lib:$LIBRARY_PATH
+        # Set comprehensive environment variables for TA-Lib
+        export LD_LIBRARY_PATH=/usr/lib:/usr/lib64:/usr/local/lib:$LD_LIBRARY_PATH
+        export LIBRARY_PATH=/usr/lib:/usr/lib64:/usr/local/lib:$LIBRARY_PATH
         export C_INCLUDE_PATH=/usr/include:$C_INCLUDE_PATH
+        export CFLAGS="-I/usr/include"
+        export LDFLAGS="-L/usr/lib"
+        export PKG_CONFIG_PATH=/usr/lib/pkgconfig:$PKG_CONFIG_PATH
+        
+        # Debug: Show environment
+        echo "LD_LIBRARY_PATH=$LD_LIBRARY_PATH"
+        echo "LIBRARY_PATH=$LIBRARY_PATH"
         
         # Install all requirements except TA-Lib first
         grep -v "TA-Lib" requirements_pattern_scanner.txt > requirements_no_talib.txt
         pip install -r requirements_no_talib.txt
         
-        # Install TA-Lib Python wrapper separately to ensure it builds against our version
+        # Install TA-Lib Python wrapper
         pip install --no-cache-dir TA-Lib
         
         # Verify both libraries are installed
@@ -297,7 +339,7 @@ jobs:
       run: |
         echo "=== End of Day Pattern Evaluation ==="
         echo "Evaluating all patterns detected during today's trading session"
-        export LD_LIBRARY_PATH=/usr/lib:$LD_LIBRARY_PATH
+        export LD_LIBRARY_PATH=/usr/lib:/usr/lib64:/usr/local/lib:$LD_LIBRARY_PATH
         python pattern_evaluator.py
     
     - name: Create issue with daily report

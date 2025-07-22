@@ -5,24 +5,19 @@ __pycache__/
 *.so
 .Python
 venv/
+ENV/
 env/
-*.egg-info/
-dist/
-build/
 
-# Temporary files
-temp_charts/
-*.log
-*.tmp
-.DS_Store
-
-# Config files with sensitive data
+# Environment files
 config/.env
 .env
 
-# Model weights (downloaded from Azure)
-weights/*.pt
-weights/*.pth
+# Logs
+*.log
+
+# OS
+.DS_Store
+Thumbs.db
 
 # IDE
 .vscode/
@@ -32,6 +27,4 @@ weights/*.pth
 
 # Test files
 test_*.py
-test_*.R
-check_*.R
-check_*.py
+*.test.py

@@ -1,100 +1,44 @@
-# Multi-Ticker YOLO Predictions - Automated Trading Signal Analysis
+# Pattern Scanner Workflow
 
-Automated trading signal detection for multiple stocks using YOLOv8, running on GitHub Actions with Azure Storage.
+This folder contains only the essential files needed for the GitHub Actions pattern scanner workflow.
+
+## Files Included
+
+- `.github/workflows/pattern_scanner.yml` - GitHub Actions workflow that runs every 15 minutes during trading hours
+- `combined_pattern_scanner_gh.py` - Main scanner using TradingPatternScanner (84.5% accuracy) and TA-Lib
+- `pattern_evaluator.py` - End-of-day evaluation of detected patterns
+- `pattern_signal_tracker.py` - Tracks and evaluates pattern signals
+- `requirements_pattern_scanner.txt` - Python dependencies
+
+## Setup Instructions
+
+1. **Copy this folder to your GitHub repository**
+
+2. **Set up GitHub Secrets** (Settings → Secrets and variables → Actions):
+   - `STORAGE_ACCOUNT_NAME` - Your Azure storage account name
+   - `ACCESS_KEY` - Your Azure storage account access key
+   - `CONTAINER_NAME` - Your Azure container name
+
+3. **Create config/.env file** (for local testing):
+   ```
+   AZURE_STORAGE_ACCOUNT=your_storage_account
+   AZURE_STORAGE_KEY=your_access_key
+   AZURE_CONTAINER_NAME=your_container_name
+   ```
+
+4. **Push to GitHub** and the workflow will run automatically
 
 ## Features
 
-- 🤖 Automated hourly predictions for multiple tickers using custom-trained YOLO
-- 📊 Multi-timeframe analysis (15m, 1h, 4h, 1d)
-- 💹 Support for BTC-USD, NVDA, and AC.TO
-- ☁️ Azure Blob Storage for data persistence
-- 📈 Performance tracking and evaluation per ticker
-- 📅 Weekly performance reports
-- 🔄 Fully automated via GitHub Actions
+- Detects chart patterns using TradingPatternScanner (84.5% accuracy)
+- Detects 60+ candlestick patterns using TA-Lib
+- Runs every 15 minutes during market hours
+- Saves results to Azure blob storage
+- End-of-day evaluation of pattern success rates
+- Multi-ticker support (NVDA, AAPL, MSFT, GOOGL, TSLA, SPY, QQQ)
 
-## Quick Start
+## Requirements
 
-1. **Set up GitHub Secrets** (Settings → Secrets → Actions):
-   - `STORAGE_ACCOUNT_NAME`
-   - `ACCESS_KEY`
-   - `CONTAINER_NAME`
-
-2. **Test Azure connection locally**:
-   ```bash
-   cd ChartScanAI_Shiny
-   # Add credentials to config/.env first
-   python setup_azure.py
-   ```
-
-3. **Push to GitHub**:
-   ```bash
-   git push origin main
-   ```
-
-The workflow will run automatically every hour!
-
-## Project Structure
-
-```
-├── .github/workflows/
-│   ├── btc-predictions.yml            # Original BTC-only workflow
-│   ├── multi-ticker-predictions.yml   # Multi-ticker workflow
-│   └── README.md                      # Workflow documentation
-├── ChartScanAI_Shiny/
-│   ├── btc_predictor_azure.py         # Original BTC prediction script
-│   ├── multi_ticker_predictor_azure.py # Multi-ticker prediction script
-│   ├── setup_azure.py                 # Azure setup/test script
-│   ├── requirements.txt               # Python dependencies
-│   └── upload_weights_to_azure.py     # Weight upload utility
-└── ChartScanAI/
-    └── weights/
-        └── custom_yolov8.pt           # Custom-trained YOLO model
-```
-
-## How It Works
-
-1. **Every hour**: GitHub Actions triggers the workflow
-2. **Data Collection**: Downloads latest price data for all tickers from Yahoo Finance
-3. **Chart Generation**: Creates candlestick charts for each ticker and timeframe
-4. **YOLO Analysis**: Custom-trained model detects Buy/Sell signals
-5. **Azure Storage**: Saves predictions, charts, and evaluations organized by ticker
-6. **Performance Tracking**: Evaluates predictions after 1 hour for each ticker
-7. **Weekly Reports**: Summarizes accuracy metrics for all tickers
-
-## Supported Tickers
-
-- **BTC-USD**: Bitcoin (Cryptocurrency)
-- **NVDA**: NVIDIA Corporation (NASDAQ)
-- **AC.TO**: Air Canada (TSX)
-
-## Monitoring Results
-
-View your predictions in Azure Storage Explorer:
-- `predictions/{ticker}/` - Hourly prediction results per ticker
-- `evaluations/{ticker}/` - Performance tracking per ticker
-- `charts/{ticker}/` - Generated candlestick charts per ticker
-- `summaries/` - Combined hourly summaries
-- `reports/` - Weekly performance summaries
-
-## Local Development
-
-Run predictions locally:
-```bash
-cd ChartScanAI_Shiny
-# For multi-ticker predictions
-python multi_ticker_predictor_azure.py
-
-# For BTC-only predictions
-python btc_predictor_azure.py
-```
-
-## Success Criteria
-
-Success thresholds vary by ticker type:
-- **BTC-USD**: Correct if price changes >0.5% within 1 hour
-- **NVDA**: Correct if price changes >0.3% within 1 hour  
-- **AC.TO**: Correct if price changes >0.5% within 1 hour
-
-## License
-
-This project uses a custom-trained YOLO model specifically for financial chart analysis.
+- Python 3.10+
+- TradingPatternScanner (installed from GitHub)
+- TA-Lib (built from source in workflow)
