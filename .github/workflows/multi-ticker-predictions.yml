@@ -39,7 +39,7 @@ jobs:
         CONTAINER_NAME: ${{ secrets.CONTAINER_NAME }}
       run: |
         cd ChartScanAI_Shiny
-        python multi_ticker_predictor_azure_optimized.py
+        python multi_ticker_predictor_azure.py
     
     - name: Create summary
       if: always()
