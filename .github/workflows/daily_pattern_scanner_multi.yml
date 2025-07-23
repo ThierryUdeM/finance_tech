@@ -27,48 +27,16 @@ jobs:
       with:
         python-version: '3.10'
     
-    - name: Install TA-Lib C library
-      run: |
-        sudo apt-get update
-        sudo apt-get install -y build-essential wget
-        wget http://prdownloads.sourceforge.net/ta-lib/ta-lib-0.4.0-src.tar.gz
-        tar -xzvf ta-lib-0.4.0-src.tar.gz
-        cd ta-lib
-        ./configure --prefix=/usr/local
-        make
-        sudo make install
-        
-        # Update library cache IMPORTANT!
-        sudo ldconfig
-        
-        # Create symbolic link for the name mismatch (ta-lib vs ta_lib)
-        sudo ln -sf /usr/local/lib/libta_lib.so.0.0.0 /usr/local/lib/libta-lib.so
-        sudo ln -sf /usr/local/lib/libta_lib.so.0.0.0 /usr/local/lib/libta-lib.so.0
-        
-        # Verify installation
-        echo "Checking TA-Lib C library installation..."
-        ls -la /usr/local/include/ta-lib/
-        ls -la /usr/local/lib/libta*
-        
-        # Update library cache again after creating symlinks
-        sudo ldconfig
-        
-        # Check if library is registered
-        ldconfig -p | grep -E 'ta_lib|ta-lib'
-    
     - name: Install Python dependencies
       run: |
-        # Export library path to ensure pip can find TA-Lib
-        export LD_LIBRARY_PATH=/usr/local/lib:$LD_LIBRARY_PATH
-        
         # Upgrade pip and install build tools
         python -m pip install --upgrade pip setuptools wheel
         
         # Install other dependencies first
         pip install yfinance pandas numpy azure-storage-blob python-dotenv
         
-        # Install TA-Lib Python wrapper
-        pip install TA-Lib
+        # Install TA-Lib using prebuilt binary wheel (much simpler!)
+        pip install talib-binary
         
         # Verify installation
         python -c "import talib; print(f'TA-Lib version: {talib.__version__}')"
