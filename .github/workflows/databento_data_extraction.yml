@@ -148,21 +148,21 @@ jobs:
             
             print(f"Using dataset: {dataset}")
             
-            # Fetch OHLCV data at 15-minute intervals
+            # Fetch OHLCV data at 1-minute intervals and resample to 15-minute
             data = client.timeseries.get_range(
                 dataset=dataset,
                 symbols=[databento_symbol],
-                schema='ohlcv-1m',  # 15-minute OHLCV bars
+                schema='ohlcv-1m',  # 1-minute OHLCV bars (15m is not supported)
                 start=START_DATE,
                 end=END_DATE,
-                limit=50000  # Should cover 2.5 years of 15-min data
+                limit=200000  # Increased limit for 1-minute data
             )
             
             if data.empty:
                 print(f"No data returned for {TICKER}. Check symbol mapping and dataset.")
                 exit(1)
             
-            # Convert to DataFrame and format for consistency with existing NVDA data
+            # Convert to DataFrame and resample to 15-minute intervals
             df = data.to_df()
             
             # Ensure we have the required columns
@@ -172,6 +172,25 @@ jobs:
                 print(f"Missing required columns: {missing_columns}")
                 print(f"Available columns: {list(df.columns)}")
                 exit(1)
+            
+            # Resample 1-minute data to 15-minute intervals
+            if 'ts_event' in df.columns:
+                df['timestamp'] = pd.to_datetime(df['ts_event'])
+                df.set_index('timestamp', inplace=True)
+                
+                # Resample to 15-minute intervals
+                df_resampled = df.resample('15T').agg({
+                    'open': 'first',
+                    'high': 'max',
+                    'low': 'min', 
+                    'close': 'last',
+                    'volume': 'sum'
+                }).dropna()
+                
+                # Reset index and use resampled data
+                df_resampled.reset_index(inplace=True)
+                df = df_resampled
+                df['ts_event'] = df['timestamp']
             
             # Rename and format columns to match NVDA data structure
             df_formatted = pd.DataFrame({
