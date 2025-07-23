@@ -91,18 +91,13 @@ jobs:
           echo "should_extract=true" >> $GITHUB_OUTPUT
         fi
         
-    - name: Create environment file
-      if: steps.check_data.outputs.should_extract == 'true'
-      run: |
-        cat > .env << EOF
-        DATABENTO_API_KEY=${{ secrets.DATABENTO_API_KEY }}
-        STORAGE_ACCOUNT_NAME=${{ secrets.STORAGE_ACCOUNT_NAME }}
-        ACCESS_KEY=${{ secrets.ACCESS_KEY }}
-        CONTAINER_NAME=${{ secrets.CONTAINER_NAME }}
-        EOF
-        
     - name: Extract historical data from Databento
       if: steps.check_data.outputs.should_extract == 'true'
+      env:
+        DATABENTO_API_KEY: ${{ secrets.DATABENTO_API_KEY }}
+        STORAGE_ACCOUNT_NAME: ${{ secrets.STORAGE_ACCOUNT_NAME }}
+        ACCESS_KEY: ${{ secrets.ACCESS_KEY }}
+        CONTAINER_NAME: ${{ secrets.CONTAINER_NAME }}
       run: |
         python << 'EOF'
         import os
@@ -242,6 +237,10 @@ jobs:
     - name: Upload data to Azure (optional backup)
       if: steps.check_data.outputs.should_extract == 'true'
       continue-on-error: true
+      env:
+        STORAGE_ACCOUNT_NAME: ${{ secrets.STORAGE_ACCOUNT_NAME }}
+        ACCESS_KEY: ${{ secrets.ACCESS_KEY }}
+        CONTAINER_NAME: ${{ secrets.CONTAINER_NAME }}
       run: |
         python << 'EOF'
         import os
