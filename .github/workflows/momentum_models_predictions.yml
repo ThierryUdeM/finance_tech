@@ -92,8 +92,7 @@ jobs:
       shell: bash -el {0}
       run: |
         echo "Running momentum+shape models for NVDA, AAPL, MSFT, TSLA"
-        cd walk_forward_tests
-        python run_momentum_models_live.py
+        python scripts/run_momentum_models_live.py
         
     - name: Upload logs as artifacts
       if: always() && steps.market_hours.outputs.should_run == 'true'
@@ -101,7 +100,8 @@ jobs:
       with:
         name: momentum-predictions-${{ github.run_number }}
         path: |
-          walk_forward_tests/*.json
+          momentum_predictions_*.json
+          scripts/*.json
           *.log
         retention-days: 7
         

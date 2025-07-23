@@ -15,15 +15,37 @@ from azure.storage.blob import BlobServiceClient
 import warnings
 warnings.filterwarnings('ignore')
 
-# Add paths
-sys.path.append(os.path.dirname(os.path.abspath(__file__)))
-sys.path.append(os.path.join(os.path.dirname(os.path.abspath(__file__)), 'model', 'momentum_shapematching'))
+# Add paths - handle both local and GitHub Actions environments
+script_dir = os.path.dirname(os.path.abspath(__file__))
+repo_root = os.path.dirname(script_dir)
+
+# Try to find the models in different locations
+model_paths = [
+    os.path.join(repo_root, 'walk_forward_tests', 'model', 'momentum_shapematching'),
+    os.path.join(repo_root, 'model', 'momentum_shapematching'),
+    os.path.join(script_dir, '..', 'walk_forward_tests', 'model', 'momentum_shapematching')
+]
+
+for path in model_paths:
+    if os.path.exists(path):
+        sys.path.insert(0, path)
+        print(f"Found models at: {path}")
+        break
+else:
+    print("Warning: Could not find model directory, trying direct import...")
 
 # Import models
-from nvda_v1 import nvda_v1_model
-from aapl_improved import aapl_improved_model
-from msft_improved import msft_improved_model
-from v1_TSLA import v1_TSLA_model
+try:
+    from nvda_v1 import nvda_v1_model
+    from aapl_improved import aapl_improved_model
+    from msft_improved import msft_improved_model
+    from v1_TSLA import v1_TSLA_model
+except ImportError as e:
+    print(f"Error importing models: {e}")
+    print("Current sys.path:")
+    for p in sys.path[:5]:
+        print(f"  {p}")
+    raise
 
 # Model mapping
 MODELS = {
