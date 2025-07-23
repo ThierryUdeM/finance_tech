@@ -2,236 +2,54 @@ name: Multi-Ticker Signal Analysis
 
 on:
   schedule:
-    # Run every 2 hours during market hours (9:30 AM - 4:30 PM ET)
-    - cron: '30 13,15,17,19,21 * * 1-5'  # 9:30, 11:30, 1:30, 3:30 PM ET
-  workflow_dispatch:
-    inputs:
-      tickers:
-        description: 'Comma-separated list of tickers (only those with historical data)'
-        required: false
-        default: 'auto'  # Will detect available tickers automatically
-      force_run:
-        description: 'Force run regardless of market hours'
-        required: false
-        default: 'false'
-        type: boolean
+    # Run every 2 hours during market hours (9:30 AM - 4:00 PM ET)
+    # Market hours: 14:30-21:00 UTC (9:30 AM - 4:00 PM ET)
+    - cron: '30 14,16,18,20 * * 1-5'  # Monday-Friday at 14:30, 16:30, 18:30, 20:30 UTC
+  workflow_dispatch:  # Allow manual triggering
 
 env:
-  PYTHONPATH: ${{ github.workspace }}
-  TZ: America/New_York
+  AZURE_STORAGE_ACCOUNT: ${{ secrets.AZURE_STORAGE_ACCOUNT }}
+  AZURE_STORAGE_KEY: ${{ secrets.AZURE_STORAGE_KEY }}
+  AZURE_CONTAINER_NAME: ${{ secrets.AZURE_CONTAINER_NAME }}
 
 jobs:
-  detect-available-tickers:
-    runs-on: ubuntu-latest
-    outputs:
-      tickers: ${{ steps.get_tickers.outputs.tickers }}
-      ticker_count: ${{ steps.get_tickers.outputs.ticker_count }}
-    steps:
-    - name: Checkout repository
-      uses: actions/checkout@v4
-      
-    - name: Detect available tickers with historical data
-      id: get_tickers
-      run: |
-        echo "Detecting tickers with sufficient historical data..."
-        
-        AVAILABLE_TICKERS=()
-        MIN_RECORDS=2000  # Minimum records needed for effective pattern matching
-        
-        # Check each potential ticker for data availability
-        for ticker in BTC-USD NVDA AC.TO AAPL MSFT TSLA; do
-          DATA_FILE="data/${ticker}_15min_pattern_ready.csv"
-          
-          if [ -f "$DATA_FILE" ]; then
-            # Count records (subtract 1 for header)
-            RECORD_COUNT=$(($(wc -l < "$DATA_FILE") - 1))
-            
-            if [ $RECORD_COUNT -ge $MIN_RECORDS ]; then
-              echo "✅ $ticker: $RECORD_COUNT records (sufficient)"
-              AVAILABLE_TICKERS+=("$ticker")
-            else
-              echo "⚠️  $ticker: $RECORD_COUNT records (insufficient, need $MIN_RECORDS+)"
-            fi
-          else
-            echo "❌ $ticker: No historical data file found"
-            echo "   Run 'Databento Historical Data Extraction' workflow first"
-          fi
-        done
-        
-        # Handle user input vs auto-detection
-        if [ "${{ github.event.inputs.tickers }}" = "auto" ] || [ -z "${{ github.event.inputs.tickers }}" ]; then
-          # Use auto-detected tickers
-          TICKERS_JSON=$(printf '%s\n' "${AVAILABLE_TICKERS[@]}" | jq -R -s -c 'split("\n")[:-1]')
-        else
-          # Use user-specified tickers, but validate they have data
-          IFS=',' read -ra USER_TICKERS <<< "${{ github.event.inputs.tickers }}"
-          VALID_TICKERS=()
-          
-          for ticker in "${USER_TICKERS[@]}"; do
-            ticker=$(echo "$ticker" | xargs)  # trim whitespace
-            if [[ " ${AVAILABLE_TICKERS[@]} " =~ " ${ticker} " ]]; then
-              VALID_TICKERS+=("$ticker")
-            else
-              echo "❌ $ticker: Not available or insufficient data"
-            fi
-          done
-          
-          TICKERS_JSON=$(printf '%s\n' "${VALID_TICKERS[@]}" | jq -R -s -c 'split("\n")[:-1]')
-        fi
-        
-        echo "Final ticker list: $TICKERS_JSON"
-        echo "tickers=$TICKERS_JSON" >> $GITHUB_OUTPUT
-        echo "ticker_count=$(echo $TICKERS_JSON | jq 'length')" >> $GITHUB_OUTPUT
-
   multi-ticker-signal-analysis:
-    needs: detect-available-tickers
     runs-on: ubuntu-latest
-    timeout-minutes: 45
-    strategy:
-      matrix:
-        ticker: ${{ fromJson(needs.detect-available-tickers.outputs.tickers) }}
-      fail-fast: false
-      max-parallel: 3
-    if: needs.detect-available-tickers.outputs.ticker_count > 0
+    timeout-minutes: 30
     
     steps:
     - name: Checkout repository
       uses: actions/checkout@v4
       
-    - name: Set up Python 3.9
-      uses: actions/setup-python@v5
-      with:
-        python-version: '3.9'
-        
-    - name: Cache pip dependencies
-      uses: actions/cache@v3
-      with:
-        path: ~/.cache/pip
-        key: ${{ runner.os }}-pip-signal-${{ hashFiles('**/requirements*.txt') }}
-        restore-keys: |
-          ${{ runner.os }}-pip-signal-
-          ${{ runner.os }}-pip-
-          
-    - name: Install dependencies
-      run: |
-        python -m pip install --upgrade pip
-        pip install yfinance pandas numpy scikit-learn matplotlib mplfinance
-        pip install azure-storage-blob python-dotenv pyyaml
-        pip install ultralytics opencv-python-headless
-        
-    - name: Validate ticker has historical data
-      id: check_ticker
-      run: |
-        TICKER="${{ matrix.ticker }}"
-        DATA_FILE="data/${TICKER}_15min_pattern_ready.csv"
-        
-        if [ -f "$DATA_FILE" ]; then
-          RECORD_COUNT=$(($(wc -l < "$DATA_FILE") - 1))
-          echo "✅ $TICKER: Found $RECORD_COUNT historical records"
-          echo "should_run=true" >> $GITHUB_OUTPUT
-        else
-          echo "❌ $TICKER: No historical data file found at $DATA_FILE"
-          echo "should_run=false" >> $GITHUB_OUTPUT
-        fi
-        
-    - name: Check market hours
-      id: market_hours
-      if: steps.check_ticker.outputs.should_run == 'true'
-      run: |
-        python -c "
-        import datetime
-        import pytz
-        
-        et = pytz.timezone('US/Eastern')
-        now = datetime.datetime.now(et)
-        
-        # Check if it's a weekday
-        if now.weekday() >= 5:  # Saturday=5, Sunday=6
-            print('Market closed: Weekend')
-            exit(1)
-            
-        # Check market hours (9:30 AM - 4:00 PM ET)
-        market_open = now.replace(hour=9, minute=30, second=0, microsecond=0)
-        market_close = now.replace(hour=16, minute=0, second=0, microsecond=0)
-        
-        force_run = '${{ github.event.inputs.force_run }}' == 'true'
-        
-        if market_open <= now <= market_close or force_run:
-            print(f'Market is open or force run enabled. Current time: {now.strftime(\"%Y-%m-%d %H:%M:%S %Z\")}')
-        else:
-            print(f'Market closed. Current time: {now.strftime(\"%Y-%m-%d %H:%M:%S %Z\")}')
-            exit(1)
-        "
-        
-    - name: Create environment file
-      if: steps.check_ticker.outputs.should_run == 'true'
-      run: |
-        cat > .env << EOF
-        STORAGE_ACCOUNT_NAME=${{ secrets.STORAGE_ACCOUNT_NAME }}
-        ACCESS_KEY=${{ secrets.ACCESS_KEY }}
-        CONTAINER_NAME=${{ secrets.CONTAINER_NAME }}
-        GITHUB_TOKEN=${{ secrets.GITHUB_TOKEN }}
-        TICKER=${{ matrix.ticker }}
-        EOF
-        
-    - name: Generate signal predictions
-      if: steps.check_ticker.outputs.should_run == 'true'
-      run: |
-        echo "Generating signal predictions for ${{ matrix.ticker }}"
-        python scripts/generate_multi_ticker_predictions.py --ticker ${{ matrix.ticker }}
-        
-    - name: Evaluate recent predictions
-      if: steps.check_ticker.outputs.should_run == 'true'
-      continue-on-error: true
-      run: |
-        echo "Evaluating recent predictions for ${{ matrix.ticker }}"
-        python scripts/evaluate_multi_ticker_predictions.py --ticker ${{ matrix.ticker }}
-        
-    - name: Upload logs as artifacts
-      if: always() && steps.check_ticker.outputs.should_run == 'true'
-      uses: actions/upload-artifact@v4
-      with:
-        name: signal-logs-${{ matrix.ticker }}-${{ github.run_number }}
-        path: |
-          logs/
-          *.log
-        retention-days: 7
-
-  performance-summary:
-    needs: multi-ticker-signal-analysis
-    runs-on: ubuntu-latest
-    if: always()
-    
-    steps:
-    - name: Checkout repository
-      uses: actions/checkout@v4
-      
-    - name: Set up Python 3.9
-      uses: actions/setup-python@v5
+    - name: Set up Python
+      uses: actions/setup-python@v4
       with:
         python-version: '3.9'
         
     - name: Install dependencies
       run: |
         python -m pip install --upgrade pip
-        pip install azure-storage-blob python-dotenv pandas numpy
+        pip install pandas numpy yfinance azure-storage-blob python-dotenv pyyaml
         
-    - name: Create environment file
+    - name: Create config directory and .env file
       run: |
-        cat > .env << EOF
-        STORAGE_ACCOUNT_NAME=${{ secrets.STORAGE_ACCOUNT_NAME }}
-        ACCESS_KEY=${{ secrets.ACCESS_KEY }}
-        CONTAINER_NAME=${{ secrets.CONTAINER_NAME }}
-        GITHUB_TOKEN=${{ secrets.GITHUB_TOKEN }}
-        EOF
+        mkdir -p config
+        echo "AZURE_STORAGE_ACCOUNT=${{ secrets.AZURE_STORAGE_ACCOUNT }}" >> config/.env
+        echo "AZURE_STORAGE_KEY=${{ secrets.AZURE_STORAGE_KEY }}" >> config/.env
+        echo "AZURE_CONTAINER_NAME=${{ secrets.AZURE_CONTAINER_NAME }}" >> config/.env
         
-    - name: Generate performance summary
-      continue-on-error: true
+    - name: Run Multi-Ticker Signal Analysis
       run: |
-        echo "Generating multi-ticker performance summary"
-        python scripts/generate_performance_summary.py
+        cd technical
+        python multi_ticker_signal_analyzer.py
         
-    - name: Create GitHub issue for performance report
-      continue-on-error: true
+    - name: Check Azure upload
+      if: always()
       run: |
-        python scripts/create_performance_issue.py
+        echo "Multi-ticker signal analysis completed"
+        echo "Results should be uploaded to Azure Storage under signal_analysis/ folder"
+        
+    - name: Cleanup
+      if: always()
+      run: |
+        rm -f config/.env
