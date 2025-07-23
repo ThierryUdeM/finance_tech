@@ -190,17 +190,43 @@ jobs:
                 print("  - Date range issues")
                 exit(1)
             
-            # Ensure we have the required columns
-            required_columns = ['ts_event', 'open', 'high', 'low', 'close', 'volume']
-            missing_columns = [col for col in required_columns if col not in df.columns]
-            if missing_columns:
-                print(f"Missing required columns: {missing_columns}")
-                print(f"Available columns: {list(df.columns)}")
+            # Check available columns and adapt
+            print(f"Available columns: {list(df.columns)}")
+            
+            # Find the timestamp column (could be ts_event, ts_recv, or index)
+            timestamp_col = None
+            if 'ts_event' in df.columns:
+                timestamp_col = 'ts_event'
+            elif 'ts_recv' in df.columns:
+                timestamp_col = 'ts_recv'
+            elif df.index.name and 'time' in df.index.name.lower():
+                # Timestamp might be the index
+                df.reset_index(inplace=True)
+                timestamp_col = df.columns[0]
+            else:
+                # Try to find any column with 'time' in the name
+                for col in df.columns:
+                    if 'time' in col.lower() or 'ts' in col.lower():
+                        timestamp_col = col
+                        break
+            
+            if timestamp_col is None:
+                # If no timestamp column found, assume index is timestamp
+                df.reset_index(inplace=True)
+                timestamp_col = 'index'
+            
+            print(f"Using timestamp column: {timestamp_col}")
+            
+            # Ensure we have OHLCV columns
+            required_ohlcv = ['open', 'high', 'low', 'close', 'volume']
+            missing_ohlcv = [col for col in required_ohlcv if col not in df.columns]
+            if missing_ohlcv:
+                print(f"Missing required OHLCV columns: {missing_ohlcv}")
                 exit(1)
             
             # Resample 1-minute data to 15-minute intervals
             print("Resampling 1-minute data to 15-minute intervals...")
-            df['timestamp'] = pd.to_datetime(df['ts_event'])
+            df['timestamp'] = pd.to_datetime(df[timestamp_col])
             df.set_index('timestamp', inplace=True)
             
             # Resample to 15-minute intervals
@@ -215,11 +241,10 @@ jobs:
             # Reset index and use resampled data
             df_resampled.reset_index(inplace=True)
             df = df_resampled
-            df['ts_event'] = df['timestamp']
             
             # Rename and format columns to match expected structure
             df_formatted = pd.DataFrame({
-                'timestamp': pd.to_datetime(df['ts_event']),
+                'timestamp': df['timestamp'],
                 'Open': df['open'].astype(float),
                 'High': df['high'].astype(float), 
                 'Low': df['low'].astype(float),
@@ -229,7 +254,14 @@ jobs:
             
             # Filter to regular trading hours (9:30 AM - 4:00 PM ET)
             et_tz = pytz.timezone('US/Eastern')
-            df_formatted['timestamp'] = df_formatted['timestamp'].dt.tz_convert(et_tz)
+            
+            # Handle timezone conversion
+            if df_formatted['timestamp'].dt.tz is None:
+                # If no timezone, assume UTC and convert to ET
+                df_formatted['timestamp'] = df_formatted['timestamp'].dt.tz_localize('UTC').dt.tz_convert(et_tz)
+            else:
+                # If already has timezone, just convert to ET
+                df_formatted['timestamp'] = df_formatted['timestamp'].dt.tz_convert(et_tz)
             
             # Filter for regular market hours (skip for crypto)
             if TICKER != 'BTC-USD':
