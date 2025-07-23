@@ -689,7 +689,7 @@ class OptimizedDailyPatternScanner:
             evaluations = evaluations[-1000:]
         
         # Save to Azure
-        blob_name = "next_day_technical/daily_predictions.json"
+        blob_name = "next_day_technical/pattern_evaluations.json"
         blob_client = self.blob_service_client.get_blob_client(
             container=self.container_name,
             blob=blob_name
@@ -702,7 +702,7 @@ class OptimizedDailyPatternScanner:
     
     def load_or_create_evaluation_file(self) -> List[Dict]:
         """Load existing evaluation file"""
-        blob_name = "next_day_technical/daily_predictions.json"
+        blob_name = "next_day_technical/pattern_evaluations.json"
         
         try:
             blob_client = self.blob_service_client.get_blob_client(
