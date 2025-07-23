@@ -25,41 +25,29 @@ jobs:
     - name: Checkout repository
       uses: actions/checkout@v4
       
-    - name: Set up Python 3.9
-      uses: actions/setup-python@v5
+    - name: Setup conda
+      uses: conda-incubator/setup-miniconda@v3
       with:
-        python-version: '3.9'
+        python-version: 3.9
+        channels: conda-forge
+        channel-priority: strict
+        activate-environment: test
+        auto-update-conda: true
         
-    - name: Cache pip dependencies
-      uses: actions/cache@v3
-      with:
-        path: ~/.cache/pip
-        key: ${{ runner.os }}-pip-momentum-${{ hashFiles('**/requirements*.txt') }}
-        restore-keys: |
-          ${{ runner.os }}-pip-momentum-
-          ${{ runner.os }}-pip-
-          
-    - name: Install TA-Lib dependencies
+    - name: Install dependencies via conda
+      shell: bash -el {0}
       run: |
-        # Install TA-Lib C library
-        wget http://prdownloads.sourceforge.net/ta-lib/ta-lib-0.4.0-src.tar.gz
-        tar -xzf ta-lib-0.4.0-src.tar.gz
-        cd ta-lib/
-        ./configure --prefix=/usr
-        make
-        sudo make install
-        cd ..
+        # Install TA-Lib and other dependencies via conda-forge
+        conda install -c conda-forge ta-lib pandas numpy scikit-learn pytz -y
         
-    - name: Install Python dependencies
+    - name: Install additional Python dependencies
+      shell: bash -el {0}
       run: |
-        python -m pip install --upgrade pip
-        pip install yfinance pandas numpy scikit-learn
-        pip install azure-storage-blob python-dotenv
-        pip install TA-Lib
-        pip install pytz
+        pip install yfinance azure-storage-blob python-dotenv
         
     - name: Check market hours
       id: market_hours
+      shell: bash -el {0}
       run: |
         python -c "
         import datetime
@@ -97,6 +85,7 @@ jobs:
         
     - name: Run momentum models predictions
       if: steps.market_hours.outputs.should_run == 'true'
+      shell: bash -el {0}
       run: |
         echo "Running momentum+shape models for NVDA, AAPL, MSFT, TSLA"
         cd walk_forward_tests
