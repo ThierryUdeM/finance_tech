@@ -62,19 +62,34 @@ def download_ac_data():
         
         print("\nDownloading data...")
         
-        # Download 15-minute bars
+        # Download 1-minute bars and resample to 15-minute
         # Note: Databento uses specific symbology - AC.TO might be "AC.TSE" or "AC.XTSE"
         data = client.timeseries.get_range(
             dataset="GLBX.MDP3",  # Global exchanges dataset
             symbols=["AC.TO", "AC", "AC.TSE", "AC.XTSE"],  # Try multiple symbol formats
-            schema="ohlcv-15m",  # 15-minute bars
+            schema="ohlcv-1m",  # 1-minute bars (15m is not supported)
             start=start_date,
             end=end_date,
             stype_in="raw_symbol"  # Use raw symbol format
         )
         
-        # Convert to DataFrame
+        # Convert to DataFrame and resample to 15-minute intervals
         df = data.to_df()
+        
+        if not df.empty:
+            # Resample 1-minute data to 15-minute bars
+            if 'ts_event' in df.columns:
+                df['timestamp'] = pd.to_datetime(df['ts_event'])
+                df.set_index('timestamp', inplace=True)
+                
+                # Resample to 15-minute intervals
+                df = df.resample('15T').agg({
+                    'open': 'first',
+                    'high': 'max',
+                    'low': 'min', 
+                    'close': 'last',
+                    'volume': 'sum'
+                }).dropna()
         
         if df.empty:
             print("No data received. Trying alternative approach...")
@@ -82,11 +97,26 @@ def download_ac_data():
             data = client.timeseries.get_range(
                 dataset="XCAN.ITCH",  # Canadian dataset
                 symbols=["AC"],
-                schema="ohlcv-15m",
+                schema="ohlcv-1m",  # 1-minute bars (15m is not supported)
                 start=start_date,
                 end=end_date
             )
             df = data.to_df()
+            
+            if not df.empty:
+                # Resample 1-minute data to 15-minute bars
+                if 'ts_event' in df.columns:
+                    df['timestamp'] = pd.to_datetime(df['ts_event'])
+                    df.set_index('timestamp', inplace=True)
+                    
+                    # Resample to 15-minute intervals
+                    df = df.resample('15T').agg({
+                        'open': 'first',
+                        'high': 'max',
+                        'low': 'min', 
+                        'close': 'last',
+                        'volume': 'sum'
+                    }).dropna()
         
         if not df.empty:
             # Save to CSV

@@ -114,21 +114,21 @@ def check_tsx_availability():
                     if not df.empty:
                         print(f" ✓ Found! Price: ${df.iloc[0]['close']:.2f}")
                         
-                        # Now try 15-minute bars
+                        # Now try 1-minute bars (15m is not supported, need to resample)
                         try:
-                            data_15m = client.timeseries.get_range(
+                            data_1m = client.timeseries.get_range(
                                 dataset=dataset,
                                 symbols=[symbol],
-                                schema="ohlcv-15m",
+                                schema="ohlcv-1m",
                                 start=start_date,
                                 end=end_date,
                                 limit=5
                             )
-                            df_15m = data_15m.to_df()
-                            if not df_15m.empty:
-                                print(f"       └─ 15-min bars available!")
+                            df_1m = data_1m.to_df()
+                            if not df_1m.empty:
+                                print(f"       └─ 1-min bars available (can resample to 15m)!")
                         except:
-                            print(f"       └─ No 15-min bars")
+                            print(f"       └─ No 1-min bars")
                             
                         break  # Found this symbol
                     else:
