@@ -96,8 +96,19 @@ def fetch_recent_data(ticker, lookback_days=58):
             
         # Prepare data format expected by models
         data.reset_index(inplace=True)
-        data.columns = ['ts_event', 'open', 'high', 'low', 'close', 'adj_close', 'volume']
-        data = data[['ts_event', 'open', 'high', 'low', 'close', 'volume']]
+        
+        # Handle different column structures from yfinance
+        if len(data.columns) == 7:
+            # Has Adj Close column
+            data.columns = ['ts_event', 'open', 'high', 'low', 'close', 'adj_close', 'volume']
+            data = data[['ts_event', 'open', 'high', 'low', 'close', 'volume']]
+        elif len(data.columns) == 6:
+            # No Adj Close column
+            data.columns = ['ts_event', 'open', 'high', 'low', 'close', 'volume']
+        else:
+            print(f"Unexpected number of columns: {len(data.columns)}")
+            print(f"Columns: {list(data.columns)}")
+            return None
         
         print(f"  Fetched {len(data)} bars from {data['ts_event'].min()} to {data['ts_event'].max()}")
         
