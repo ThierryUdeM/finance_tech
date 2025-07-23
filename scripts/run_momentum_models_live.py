@@ -75,40 +75,34 @@ def fetch_recent_data(ticker, lookback_days=58):
     """Fetch recent data from yfinance - max 59 days for 15min data"""
     print(f"\nFetching {lookback_days} days of data for {ticker}...")
     
-    end_date = datetime.now()
-    start_date = end_date - timedelta(days=lookback_days)
-    
-    print(f"  Date range: {start_date.strftime('%Y-%m-%d')} to {end_date.strftime('%Y-%m-%d')}")
+    print(f"  Looking back {lookback_days} days")
     
     try:
+        # Use Ticker object for cleaner data structure
+        ticker_obj = yf.Ticker(ticker)
+        
+        # Calculate period string (yfinance uses max 60d for 15min data)
+        period = f"{min(lookback_days, 59)}d"
+        
         # Download 15-minute data
-        data = yf.download(
-            ticker,
-            start=start_date,
-            end=end_date,
-            interval='15m',
-            progress=False
-        )
+        data = ticker_obj.history(period=period, interval='15m')
         
         if data.empty:
             print(f"No data received for {ticker}")
             return None
             
-        # Prepare data format expected by models
+        # Reset index to get Datetime as a column
         data.reset_index(inplace=True)
         
-        # Handle different column structures from yfinance
-        if len(data.columns) == 7:
-            # Has Adj Close column
-            data.columns = ['ts_event', 'open', 'high', 'low', 'close', 'adj_close', 'volume']
-            data = data[['ts_event', 'open', 'high', 'low', 'close', 'volume']]
-        elif len(data.columns) == 6:
-            # No Adj Close column
-            data.columns = ['ts_event', 'open', 'high', 'low', 'close', 'volume']
-        else:
-            print(f"Unexpected number of columns: {len(data.columns)}")
-            print(f"Columns: {list(data.columns)}")
-            return None
+        # Rename columns to expected format
+        data.rename(columns={'Datetime': 'ts_event'}, inplace=True)
+        
+        # Convert column names to lowercase
+        data.columns = [col.lower() for col in data.columns]
+        
+        # Select only needed columns
+        expected_cols = ['ts_event', 'open', 'high', 'low', 'close', 'volume']
+        data = data[expected_cols]
         
         print(f"  Fetched {len(data)} bars from {data['ts_event'].min()} to {data['ts_event'].max()}")
         
