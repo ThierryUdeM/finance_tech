@@ -392,8 +392,8 @@ class SimpleTechnicalScanner:
         blob_client.upload_blob(json_data, overwrite=True)
         logger.info(f"Saved evaluation. Total evaluations: {len(evaluations)}")
     
-    def save_current_signal(self, signal_data):
-        """Save current trading signal"""
+    def prepare_signal_for_evaluation(self, signal_data):
+        """Prepare signal data with metadata for evaluation storage"""
         # Add metadata
         signal_data['scan_time'] = datetime.now().isoformat()
         signal_data['expiry_time'] = (datetime.now() + timedelta(minutes=15)).isoformat()
@@ -408,17 +408,7 @@ class SimpleTechnicalScanner:
         else:
             signal_data['strength'] = 'Weak'
         
-        # Save to Azure
-        blob_name = "same_day_technical/current_signal.json"
-        blob_client = self.blob_service_client.get_blob_client(
-            container=self.container_name,
-            blob=blob_name
-        )
-        
-        json_data = json.dumps(signal_data, indent=2, default=str)
-        blob_client.upload_blob(json_data, overwrite=True)
-        logger.info(f"Saved current signal: {signal_data['signal']} "
-                   f"({signal_data['strength']}) at ${signal_data['price']}")
+        return signal_data
     
     def run_scan(self, tickers=['NVDA']):
         """Run technical scan for specified tickers"""
@@ -428,13 +418,15 @@ class SimpleTechnicalScanner:
             try:
                 signal = self.scan_ticker(ticker)
                 if signal:
-                    all_signals.append(signal)
+                    # Prepare signal with metadata
+                    prepared_signal = self.prepare_signal_for_evaluation(signal)
+                    all_signals.append(prepared_signal)
                     
-                    # Save evaluation
-                    self.save_evaluation(signal)
+                    # Save to unified evaluation file only
+                    self.save_evaluation(prepared_signal)
                     
-                    # Save current signal
-                    self.save_current_signal(signal)
+                    logger.info(f"Saved signal for {ticker}: {prepared_signal['signal']} "
+                               f"({prepared_signal['strength']}) at ${prepared_signal['price']}")
                     
             except Exception as e:
                 logger.error(f"Error scanning {ticker}: {e}")

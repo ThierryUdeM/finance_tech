@@ -58,7 +58,8 @@ class DailyPatternScanner:
         
         # Check for mode override
         self.pattern_mode = os.getenv('PATTERN_MODE', 'daily')
-        self.azure_folder = f"next_day_technical/{self.ticker.lower()}"
+        # Use unified folder structure instead of ticker-specific folders
+        self.azure_folder = "next_day_technical"
         
         if not all([self.storage_account, self.storage_key, self.container_name]):
             raise ValueError("Azure storage credentials not found")
@@ -514,6 +515,26 @@ class DailyPatternScanner:
         blob_client.upload_blob(json_data, overwrite=True)
         logger.info(f"Saved evaluation. Total evaluations: {len(evaluations)}")
     
+    def load_or_create_predictions_file(self):
+        """Load existing predictions file or create new one"""
+        blob_name = f"{self.azure_folder}/daily_predictions.json"
+        
+        try:
+            blob_client = self.blob_service_client.get_blob_client(
+                container=self.container_name,
+                blob=blob_name
+            )
+            
+            # Try to download existing file
+            blob_data = blob_client.download_blob()
+            content = blob_data.readall()
+            predictions = json.loads(content)
+            logger.info(f"Loaded existing predictions with {len(predictions)} entries")
+            return predictions
+        except:
+            logger.info("Creating new predictions file")
+            return []
+    
     def save_next_day_predictions(self, patterns, ticker):
         """Save next day trading predictions"""
         if not patterns:
@@ -573,16 +594,24 @@ class DailyPatternScanner:
                 }
             }
         
-        # Save to Azure
-        blob_name = f"{self.azure_folder}/next_day_predictions.json"
+        # Load existing predictions and append new one
+        all_predictions = self.load_or_create_predictions_file()
+        all_predictions.append(predictions)
+        
+        # Keep only last 1000 predictions to manage file size
+        if len(all_predictions) > 1000:
+            all_predictions = all_predictions[-1000:]
+        
+        # Save back to Azure
+        blob_name = f"{self.azure_folder}/daily_predictions.json"
         blob_client = self.blob_service_client.get_blob_client(
             container=self.container_name,
             blob=blob_name
         )
         
-        json_data = json.dumps(predictions, indent=2, default=str)
+        json_data = json.dumps(all_predictions, indent=2, default=str)
         blob_client.upload_blob(json_data, overwrite=True)
-        logger.info(f"Saved next day predictions: {predictions['summary']['recommendation']} "
+        logger.info(f"Saved next day prediction for {ticker}: {predictions['summary']['recommendation']} "
                    f"with {predictions['summary']['confidence']:.1%} confidence")
         
         return predictions
@@ -621,16 +650,21 @@ class DailyPatternScanner:
 
 def main():
     """Main function for GitHub Actions"""
-    # Get ticker from environment or default
-    ticker = os.getenv('TICKER', 'NVDA')
+    # Get ticker(s) from environment or default to all
+    ticker_input = os.getenv('TICKER', 'ALL')
     
-    # Create scanner for specific ticker
-    scanner = DailyPatternScanner(ticker=ticker)
+    if ticker_input == 'ALL':
+        tickers = ['NVDA', 'AAPL', 'MSFT', 'BTC-USD', 'AC.TO']
+    else:
+        tickers = [ticker_input]
     
-    # Run scan for single ticker
-    patterns = scanner.run_daily_scan([ticker])
+    # Create scanner (ticker doesn't matter for unified structure)
+    scanner = DailyPatternScanner()
     
-    logger.info(f"Daily pattern scan completed successfully for {ticker}")
+    # Run scan for all specified tickers
+    patterns = scanner.run_daily_scan(tickers)
+    
+    logger.info(f"Daily pattern scan completed successfully for {', '.join(tickers)}")
     return 0
 
 

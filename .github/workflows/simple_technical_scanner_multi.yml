@@ -17,10 +17,6 @@ on:
 jobs:
   scan-intraday:
     runs-on: ubuntu-latest
-    strategy:
-      matrix:
-        ticker: [NVDA, AAPL, MSFT, BTC-USD, AC.TO]
-      fail-fast: false  # Continue other tickers even if one fails
     
     steps:
     - name: Check market hours
@@ -36,17 +32,12 @@ jobs:
         MARKET_OPEN=$((9 * 60 + 30))
         MARKET_CLOSE=$((16 * 60))
         
-        # Special handling for BTC (24/7 but align with US market hours)
-        if [ "${{ matrix.ticker }}" = "BTC-USD" ]; then
-          echo "BTC-USD trades 24/7, aligning with US market hours for consistency"
-        fi
-        
         if [ $CURRENT_DAY -le 5 ] && [ $CURRENT_TIME -ge $MARKET_OPEN ] && [ $CURRENT_TIME -lt $MARKET_CLOSE ]; then
           echo "market_open=true" >> $GITHUB_OUTPUT
-          echo "Market is open - running ${{ matrix.ticker }} scan"
+          echo "Market is open - running multi-ticker scan"
         else
           echo "market_open=false" >> $GITHUB_OUTPUT
-          echo "Market is closed - skipping ${{ matrix.ticker }} scan"
+          echo "Market is closed - skipping scan"
         fi
     
     - name: Checkout repository
@@ -75,20 +66,21 @@ jobs:
         AZURE_CONTAINER_NAME=${{ secrets.CONTAINER_NAME }}
         EOF
     
-    - name: Run simple technical scanner for ${{ matrix.ticker }}
+    - name: Run simple technical scanner for all tickers
       if: steps.market-check.outputs.market_open == 'true' || github.event_name == 'workflow_dispatch'
       run: |
-        export TICKER="${{ matrix.ticker }}"
+        # Override ticker list for multi-ticker processing
+        export TICKER="ALL"
         python simple_technical_scanner.py
     
     - name: Upload logs
       if: always() && (steps.market-check.outputs.market_open == 'true' || github.event_name == 'workflow_dispatch')
       uses: actions/upload-artifact@v4
       with:
-        name: ${{ matrix.ticker }}-technical-scan-logs-${{ github.run_id }}
+        name: multi-ticker-technical-scan-logs-${{ github.run_id }}
         path: |
           *.log
-          current_signal.json
+          *.json
         if-no-files-found: warn
         retention-days: 7
 
@@ -99,11 +91,6 @@ jobs:
     if: |
       github.event_name == 'schedule' && 
       (contains(github.event.schedule, '15 20') || contains(github.event.schedule, '15 21'))
-    
-    strategy:
-      matrix:
-        ticker: [NVDA, AAPL, MSFT, BTC-USD, AC.TO]
-      fail-fast: false
     
     steps:
     - name: Checkout repository
@@ -128,17 +115,19 @@ jobs:
         AZURE_CONTAINER_NAME=${{ secrets.CONTAINER_NAME }}
         EOF
     
-    - name: Generate performance summary for ${{ matrix.ticker }}
+    - name: Generate performance summary for all tickers
       run: |
-        export TICKER="${{ matrix.ticker }}"
         python -c "
         from simple_technical_scanner import SimpleTechnicalScanner
         scanner = SimpleTechnicalScanner()
         summary = scanner.get_performance_summary()
-        print('${{ matrix.ticker }} Daily Performance Summary:')
-        print(f'Total Signals: {summary[\"total_signals\"]}')
-        print(f'Buy: {summary[\"buy_signals\"]}, Sell: {summary[\"sell_signals\"]}, Hold: {summary[\"hold_signals\"]}')
-        print(f'Average Confidence: {summary[\"avg_confidence\"]:.1%}')
+        if summary:
+            print('Multi-Ticker Daily Performance Summary:')
+            print(f'Total Signals: {summary[\"total_signals\"]}')
+            print(f'Buy: {summary[\"buy_signals\"]}, Sell: {summary[\"sell_signals\"]}, Hold: {summary[\"hold_signals\"]}')
+            print(f'Average Confidence: {summary[\"avg_confidence\"]:.1%}')
+        else:
+            print('No sufficient data for performance summary yet')
         "
     
     - name: Create issue with daily summary
@@ -147,13 +136,11 @@ jobs:
       with:
         script: |
           const date = new Date().toISOString().split('T')[0];
-          const ticker = '${{ matrix.ticker }}';
-          const tickerLower = ticker.toLowerCase().replace('-', '');
           
           github.rest.issues.create({
             owner: context.repo.owner,
             repo: context.repo.repo,
-            title: `Simple Technical Scanner Daily Summary - ${ticker} - ${date}`,
-            body: `Today's ${ticker} intraday technical signals have been analyzed. Check the performance_summary.json in Azure for detailed metrics.`,
-            labels: ['automated', 'daily-report', 'technical', tickerLower]
+            title: `Simple Technical Scanner Daily Summary - Multi-Ticker - ${date}`,
+            body: `Today's multi-ticker intraday technical signals have been analyzed for NVDA, AAPL, MSFT, BTC-USD, and AC.TO. Check the technical_evaluations.json in Azure for detailed metrics.`,
+            labels: ['automated', 'daily-report', 'technical', 'multi-ticker']
           });

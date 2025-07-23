@@ -17,10 +17,6 @@ on:
 jobs:
   scan-daily-patterns:
     runs-on: ubuntu-latest
-    strategy:
-      matrix:
-        ticker: [NVDA, AAPL, MSFT, BTC-USD, AC.TO]
-      fail-fast: false  # Continue other tickers even if one fails
     
     steps:
     - name: Checkout repository
@@ -104,16 +100,16 @@ jobs:
         AZURE_CONTAINER_NAME=${{ secrets.CONTAINER_NAME }}
         EOF
     
-    - name: Run daily pattern scanner for ${{ matrix.ticker }}
+    - name: Run daily pattern scanner for all tickers
       run: |
-        export TICKER="${{ matrix.ticker }}"
+        export TICKER="ALL"
         python daily_pattern_scanner.py
     
     - name: Upload logs
       if: always()
       uses: actions/upload-artifact@v4
       with:
-        name: ${{ matrix.ticker }}-daily-pattern-logs-${{ github.run_id }}
+        name: multi-ticker-daily-pattern-logs-${{ github.run_id }}
         path: |
           *.log
           *.json
@@ -127,11 +123,6 @@ jobs:
     if: |
       github.event_name == 'schedule' && 
       (contains(github.event.schedule, '45 20') || contains(github.event.schedule, '45 21'))
-    
-    strategy:
-      matrix:
-        ticker: [NVDA, AAPL, MSFT, BTC-USD, AC.TO]
-      fail-fast: false
     
     steps:
     - name: Checkout repository
@@ -156,24 +147,31 @@ jobs:
         AZURE_CONTAINER_NAME=${{ secrets.CONTAINER_NAME }}
         EOF
     
-    - name: Generate performance summary for ${{ matrix.ticker }}
+    - name: Generate performance summary for all tickers
       run: |
-        export TICKER="${{ matrix.ticker }}"
         python -c "
         from daily_pattern_scanner import DailyPatternScanner
-        scanner = DailyPatternScanner(ticker='${{ matrix.ticker }}')
+        scanner = DailyPatternScanner()
         evaluations = scanner.load_or_create_evaluation_file()
         total_evals = len(evaluations)
         if total_evals > 0:
-            recent_evals = evaluations[-30:] if total_evals > 30 else evaluations
-            buy_signals = sum(1 for e in recent_evals if e.get('recommendation') == 'BUY')
-            sell_signals = sum(1 for e in recent_evals if e.get('recommendation') == 'SELL')
-            hold_signals = sum(1 for e in recent_evals if e.get('recommendation') == 'HOLD')
-            avg_confidence = sum(e.get('confidence', 0) for e in recent_evals) / len(recent_evals)
-            print('${{ matrix.ticker }} Daily Pattern Summary (Last 30 days):')
+            recent_evals = evaluations[-100:] if total_evals > 100 else evaluations
+            
+            # Analyze by ticker
+            tickers = ['NVDA', 'AAPL', 'MSFT', 'BTC-USD', 'AC.TO']
+            print('Multi-Ticker Daily Pattern Summary (Recent evaluations):')
             print(f'Total Evaluations: {len(recent_evals)}')
-            print(f'Buy: {buy_signals}, Sell: {sell_signals}, Hold: {hold_signals}')
-            print(f'Average Confidence: {avg_confidence:.1%}')
+            
+            for ticker in tickers:
+                ticker_evals = [e for e in recent_evals if e.get('ticker') == ticker]
+                if ticker_evals:
+                    buy_signals = sum(1 for e in ticker_evals if e.get('recommendation') == 'BUY')
+                    sell_signals = sum(1 for e in ticker_evals if e.get('recommendation') == 'SELL')
+                    hold_signals = sum(1 for e in ticker_evals if e.get('recommendation') == 'HOLD')
+                    avg_confidence = sum(e.get('confidence', 0) for e in ticker_evals) / len(ticker_evals)
+                    print(f'{ticker}: {len(ticker_evals)} evals - Buy: {buy_signals}, Sell: {sell_signals}, Hold: {hold_signals}, Avg Conf: {avg_confidence:.1%}')
+                else:
+                    print(f'{ticker}: No evaluations yet')
         else:
             print('No evaluation data available yet')
         "
@@ -184,13 +182,11 @@ jobs:
       with:
         script: |
           const date = new Date().toISOString().split('T')[0];
-          const ticker = '${{ matrix.ticker }}';
-          const tickerLower = ticker.toLowerCase().replace('-', '');
           
           github.rest.issues.create({
             owner: context.repo.owner,
             repo: context.repo.repo,
-            title: `Daily Pattern Scanner Summary - ${ticker} - ${date}`,
-            body: `Today's ${ticker} daily chart patterns have been analyzed. Check the next_day_technical/${tickerLower}/ folder in Azure for detailed predictions.`,
-            labels: ['automated', 'daily-report', 'pattern-scanner', tickerLower]
+            title: `Daily Pattern Scanner Summary - Multi-Ticker - ${date}`,
+            body: `Today's daily chart patterns have been analyzed for NVDA, AAPL, MSFT, BTC-USD, and AC.TO. Check the next_day_technical/ folder in Azure for unified daily_predictions.json and pattern_evaluations.json files.`,
+            labels: ['automated', 'daily-report', 'pattern-scanner', 'multi-ticker']
           });
