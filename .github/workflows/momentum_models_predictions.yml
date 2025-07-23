@@ -1,0 +1,124 @@
+name: Momentum Models Live Predictions
+
+on:
+  schedule:
+    # Run every 15 minutes during market hours (9:30 AM - 4:00 PM ET)
+    - cron: '*/15 13-21 * * 1-5'  # 9:00 AM - 5:00 PM UTC (covers US market hours)
+  workflow_dispatch:
+    inputs:
+      force_run:
+        description: 'Force run regardless of market hours'
+        required: false
+        default: 'false'
+        type: boolean
+
+env:
+  PYTHONPATH: ${{ github.workspace }}
+  TZ: America/New_York
+
+jobs:
+  momentum-models-predictions:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+      
+    - name: Set up Python 3.9
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.9'
+        
+    - name: Cache pip dependencies
+      uses: actions/cache@v3
+      with:
+        path: ~/.cache/pip
+        key: ${{ runner.os }}-pip-momentum-${{ hashFiles('**/requirements*.txt') }}
+        restore-keys: |
+          ${{ runner.os }}-pip-momentum-
+          ${{ runner.os }}-pip-
+          
+    - name: Install TA-Lib dependencies
+      run: |
+        # Install TA-Lib C library
+        wget http://prdownloads.sourceforge.net/ta-lib/ta-lib-0.4.0-src.tar.gz
+        tar -xzf ta-lib-0.4.0-src.tar.gz
+        cd ta-lib/
+        ./configure --prefix=/usr
+        make
+        sudo make install
+        cd ..
+        
+    - name: Install Python dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install yfinance pandas numpy scikit-learn
+        pip install azure-storage-blob python-dotenv
+        pip install TA-Lib
+        pip install pytz
+        
+    - name: Check market hours
+      id: market_hours
+      run: |
+        python -c "
+        import datetime
+        import pytz
+        
+        et = pytz.timezone('US/Eastern')
+        now = datetime.datetime.now(et)
+        
+        # Check if it's a weekday
+        if now.weekday() >= 5:  # Saturday=5, Sunday=6
+            print('Market closed: Weekend')
+            print('should_run=false')
+            exit(0)
+            
+        # Check market hours (9:30 AM - 4:00 PM ET)
+        market_open = now.replace(hour=9, minute=30, second=0, microsecond=0)
+        market_close = now.replace(hour=16, minute=0, second=0, microsecond=0)
+        
+        force_run = '${{ github.event.inputs.force_run }}' == 'true'
+        
+        if market_open <= now <= market_close or force_run:
+            print(f'Market is open or force run enabled. Current time: {now.strftime(\"%Y-%m-%d %H:%M:%S %Z\")}')
+            print('should_run=true')
+        else:
+            print(f'Market closed. Current time: {now.strftime(\"%Y-%m-%d %H:%M:%S %Z\")}')
+            print('should_run=false')
+        " >> $GITHUB_OUTPUT
+        
+    - name: Create environment variables
+      if: steps.market_hours.outputs.should_run == 'true'
+      run: |
+        echo "STORAGE_ACCOUNT_NAME=${{ secrets.STORAGE_ACCOUNT_NAME }}" >> $GITHUB_ENV
+        echo "ACCESS_KEY=${{ secrets.ACCESS_KEY }}" >> $GITHUB_ENV
+        echo "CONTAINER_NAME=${{ secrets.CONTAINER_NAME }}" >> $GITHUB_ENV
+        
+    - name: Run momentum models predictions
+      if: steps.market_hours.outputs.should_run == 'true'
+      run: |
+        echo "Running momentum+shape models for NVDA, AAPL, MSFT, TSLA"
+        cd walk_forward_tests
+        python run_momentum_models_live.py
+        
+    - name: Upload logs as artifacts
+      if: always() && steps.market_hours.outputs.should_run == 'true'
+      uses: actions/upload-artifact@v4
+      with:
+        name: momentum-predictions-${{ github.run_number }}
+        path: |
+          walk_forward_tests/*.json
+          *.log
+        retention-days: 7
+        
+    - name: Summary
+      if: steps.market_hours.outputs.should_run == 'true'
+      run: |
+        echo "## Momentum Models Prediction Run" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "- **Run Time:** $(date +'%Y-%m-%d %H:%M:%S %Z')" >> $GITHUB_STEP_SUMMARY
+        echo "- **Models:** NVDA (v1), AAPL (improved), MSFT (improved), TSLA (v1)" >> $GITHUB_STEP_SUMMARY
+        echo "- **Status:** Complete" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "Results saved to Azure container: predictions/momentum_models_latest.json" >> $GITHUB_STEP_SUMMARY
