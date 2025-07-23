@@ -30,58 +30,126 @@ jobs:
     - name: Checkout repository
       uses: actions/checkout@v4
       
+    - name: Set up Python 3.9
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.9'
+        
+    - name: Install Azure dependencies
+      run: |
+        pip install azure-storage-blob
+      
     - name: Detect available tickers with historical data
       id: get_tickers
+      env:
+        STORAGE_ACCOUNT_NAME: ${{ secrets.STORAGE_ACCOUNT_NAME }}
+        ACCESS_KEY: ${{ secrets.ACCESS_KEY }}
+        CONTAINER_NAME: ${{ secrets.CONTAINER_NAME }}
       run: |
-        echo "Detecting tickers with sufficient historical data..."
+        python << 'EOF'
+        import os
+        import json
+        from azure.storage.blob import BlobServiceClient
         
-        AVAILABLE_TICKERS=()
-        MIN_RECORDS=2000  # Minimum records needed for effective pattern matching
+        # Initialize Azure client
+        account_name = os.environ['STORAGE_ACCOUNT_NAME']
+        access_key = os.environ['ACCESS_KEY']
+        container_name = os.environ['CONTAINER_NAME']
         
-        # Check each potential ticker for data availability
-        for ticker in BTC-USD NVDA AC.TO AAPL MSFT TSLA; do
-          DATA_FILE="data/${ticker}_15min_pattern_ready.csv"
-          
-          if [ -f "$DATA_FILE" ]; then
-            # Count records (subtract 1 for header)
-            RECORD_COUNT=$(($(wc -l < "$DATA_FILE") - 1))
+        blob_service_client = BlobServiceClient(
+            account_url=f"https://{account_name}.blob.core.windows.net",
+            credential=access_key
+        )
+        container_client = blob_service_client.get_container_client(container_name)
+        
+        print("Detecting tickers with sufficient historical data from Azure...")
+        
+        AVAILABLE_TICKERS = []
+        MIN_RECORDS = 2000  # Minimum records needed for effective pattern matching
+        
+        try:
+            # Check the databento summary file first
+            summary_blob = container_client.get_blob_client('databento/summary.json')
+            summary_data = json.loads(summary_blob.download_blob().readall())
             
-            if [ $RECORD_COUNT -ge $MIN_RECORDS ]; then
-              echo "✅ $ticker: $RECORD_COUNT records (sufficient)"
-              AVAILABLE_TICKERS+=("$ticker")
-            else
-              echo "⚠️  $ticker: $RECORD_COUNT records (insufficient, need $MIN_RECORDS+)"
-            fi
-          else
-            echo "❌ $ticker: No historical data file found"
-            echo "   Run 'Databento Historical Data Extraction' workflow first"
-          fi
-        done
+            # Check each ticker in the summary
+            for ticker, info in summary_data.get('tickers', {}).items():
+                record_count = info.get('total_records', 0)
+                
+                if record_count >= MIN_RECORDS:
+                    print(f"✅ {ticker}: {record_count} records (sufficient)")
+                    AVAILABLE_TICKERS.append(ticker)
+                else:
+                    print(f"⚠️  {ticker}: {record_count} records (insufficient, need {MIN_RECORDS}+)")
+                    
+        except Exception as e:
+            print(f"Could not read summary file: {str(e)}")
+            
+            # Fallback: List all databento blobs
+            print("Checking individual ticker files...")
+            blobs = container_client.list_blobs(name_starts_with='databento/')
+            
+            for blob in blobs:
+                if blob.name.endswith('_historical_data.json') and not blob.name.endswith('summary.json'):
+                    ticker = blob.name.split('/')[-1].replace('_historical_data.json', '')
+                    
+                    try:
+                        # Download and check record count
+                        blob_client = container_client.get_blob_client(blob.name)
+                        data = json.loads(blob_client.download_blob().readall())
+                        
+                        if 'metadata' in data:
+                            record_count = data['metadata'].get('total_records', 0)
+                        elif 'data' in data:
+                            record_count = len(data['data'])
+                        else:
+                            record_count = len(data)
+                        
+                        if record_count >= MIN_RECORDS:
+                            print(f"✅ {ticker}: {record_count} records (sufficient)")
+                            AVAILABLE_TICKERS.append(ticker)
+                        else:
+                            print(f"⚠️  {ticker}: {record_count} records (insufficient, need {MIN_RECORDS}+)")
+                            
+                    except Exception as e:
+                        print(f"Error checking {ticker}: {str(e)}")
         
-        # Handle user input vs auto-detection
-        if [ "${{ github.event.inputs.tickers }}" = "auto" ] || [ -z "${{ github.event.inputs.tickers }}" ]; then
-          # Use auto-detected tickers
-          TICKERS_JSON=$(printf '%s\n' "${AVAILABLE_TICKERS[@]}" | jq -R -s -c 'split("\n")[:-1]')
-        else
-          # Use user-specified tickers, but validate they have data
-          IFS=',' read -ra USER_TICKERS <<< "${{ github.event.inputs.tickers }}"
-          VALID_TICKERS=()
-          
-          for ticker in "${USER_TICKERS[@]}"; do
-            ticker=$(echo "$ticker" | xargs)  # trim whitespace
-            if [[ " ${AVAILABLE_TICKERS[@]} " =~ " ${ticker} " ]]; then
-              VALID_TICKERS+=("$ticker")
-            else
-              echo "❌ $ticker: Not available or insufficient data"
-            fi
-          done
-          
-          TICKERS_JSON=$(printf '%s\n' "${VALID_TICKERS[@]}" | jq -R -s -c 'split("\n")[:-1]')
-        fi
+        # Output the results
+        if not AVAILABLE_TICKERS:
+            print("❌ No tickers found with sufficient data in Azure")
+            print("   Run 'Databento Historical Data Extraction' workflow first")
         
-        echo "Final ticker list: $TICKERS_JSON"
-        echo "tickers=$TICKERS_JSON" >> $GITHUB_OUTPUT
-        echo "ticker_count=$(echo $TICKERS_JSON | jq 'length')" >> $GITHUB_OUTPUT
+        # Write to GitHub output
+        import subprocess
+        tickers_json = json.dumps(AVAILABLE_TICKERS)
+        with open(os.environ['GITHUB_OUTPUT'], 'a') as f:
+            f.write(f"tickers={tickers_json}\n")
+            f.write(f"ticker_count={len(AVAILABLE_TICKERS)}\n")
+        
+        print(f"\nFinal ticker list: {AVAILABLE_TICKERS}")
+        
+        # Handle user input if provided
+        user_input = "${{ github.event.inputs.tickers }}"
+        if user_input and user_input != "auto":
+            # User specified tickers, validate they have data
+            user_tickers = [t.strip() for t in user_input.split(',')]
+            valid_tickers = []
+            
+            for ticker in user_tickers:
+                if ticker in AVAILABLE_TICKERS:
+                    valid_tickers.append(ticker)
+                else:
+                    print(f"❌ {ticker}: Not available or insufficient data in Azure")
+            
+            # Update the output with validated user tickers
+            if valid_tickers:
+                tickers_json = json.dumps(valid_tickers)
+                with open(os.environ['GITHUB_OUTPUT'], 'w') as f:
+                    f.write(f"tickers={tickers_json}\n")
+                    f.write(f"ticker_count={len(valid_tickers)}\n")
+                print(f"Using user-specified tickers: {valid_tickers}")
+        
+        EOF
 
   multi-ticker-signal-analysis:
     needs: detect-available-tickers
@@ -121,18 +189,16 @@ jobs:
         
     - name: Validate ticker has historical data
       id: check_ticker
+      env:
+        STORAGE_ACCOUNT_NAME: ${{ secrets.STORAGE_ACCOUNT_NAME }}
+        ACCESS_KEY: ${{ secrets.ACCESS_KEY }}
+        CONTAINER_NAME: ${{ secrets.CONTAINER_NAME }}
       run: |
+        # Since the ticker passed the detection phase, we know it has data
+        # This step is now just a confirmation
         TICKER="${{ matrix.ticker }}"
-        DATA_FILE="data/${TICKER}_15min_pattern_ready.csv"
-        
-        if [ -f "$DATA_FILE" ]; then
-          RECORD_COUNT=$(($(wc -l < "$DATA_FILE") - 1))
-          echo "✅ $TICKER: Found $RECORD_COUNT historical records"
-          echo "should_run=true" >> $GITHUB_OUTPUT
-        else
-          echo "❌ $TICKER: No historical data file found at $DATA_FILE"
-          echo "should_run=false" >> $GITHUB_OUTPUT
-        fi
+        echo "✅ $TICKER: Validated in Azure databento folder"
+        echo "should_run=true" >> $GITHUB_OUTPUT
         
     - name: Check market hours
       id: market_hours

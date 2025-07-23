@@ -84,14 +84,29 @@ def load_ticker_config(ticker):
     return config
 
 def load_historical_data(ticker):
-    """Load historical data for the ticker"""
-    data_file = f'data/{ticker}_15min_pattern_ready.csv'
+    """Load historical data for the ticker from Azure"""
+    from ChartScanAI_Shiny.azure_utils import download_from_azure
     
-    if not os.path.exists(data_file):
-        raise FileNotFoundError(f"Historical data file not found: {data_file}")
+    # Download from Azure databento folder
+    azure_path = f'databento/{ticker}_historical_data.json'
     
-    df = pd.read_csv(data_file)
-    df['timestamp'] = pd.to_datetime(df['timestamp'])
+    try:
+        # Download the JSON data
+        json_data = download_from_azure(azure_path)
+        data = json.loads(json_data)
+        
+        # Extract the records
+        if 'data' in data:
+            records = data['data']
+        else:
+            records = data
+            
+        # Convert to DataFrame
+        df = pd.DataFrame(records)
+        df['timestamp'] = pd.to_datetime(df['timestamp'])
+        
+    except Exception as e:
+        raise FileNotFoundError(f"Could not load historical data from Azure for {ticker}: {str(e)}")
     
     # Validate data quality
     required_columns = ['timestamp', 'Open', 'High', 'Low', 'Close', 'Volume']
