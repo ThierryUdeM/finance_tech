@@ -42,7 +42,7 @@ jobs:
     - name: Install databento and dependencies
       run: |
         python -m pip install --upgrade pip
-        pip install databento pandas numpy pytz python-dotenv
+        pip install databento pandas numpy pytz
         pip install azure-storage-blob
         
     - name: Validate ticker input
@@ -110,9 +110,7 @@ jobs:
         import databento as db
         from datetime import datetime, timedelta
         import pytz
-        from dotenv import load_dotenv
-        
-        load_dotenv()
+        # Environment variables are already set by GitHub Actions
         
         # Configuration
         TICKER = os.environ['TICKER']
@@ -248,9 +246,7 @@ jobs:
         python << 'EOF'
         import os
         from azure.storage.blob import BlobServiceClient
-        from dotenv import load_dotenv
-        
-        load_dotenv()
+        # Environment variables are already set by GitHub Actions
         
         try:
             # Initialize Azure client
