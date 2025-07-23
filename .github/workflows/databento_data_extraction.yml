@@ -79,16 +79,60 @@ jobs:
         echo "  Start Date: $START_DATE"
         echo "  End Date: $END_DATE"
         
-    - name: Check if data already exists
+    - name: Check if data already exists in Azure
       id: check_data
+      env:
+        STORAGE_ACCOUNT_NAME: ${{ secrets.STORAGE_ACCOUNT_NAME }}
+        ACCESS_KEY: ${{ secrets.ACCESS_KEY }}
+        CONTAINER_NAME: ${{ secrets.CONTAINER_NAME }}
       run: |
-        DATA_FILE="data/${TICKER}_15min_pattern_ready.csv"
-        if [ -f "$DATA_FILE" ] && [ "${{ github.event.inputs.overwrite_existing }}" != "true" ]; then
-          echo "Data file already exists: $DATA_FILE"
-          echo "Use overwrite_existing=true to replace it"
-          echo "should_extract=false" >> $GITHUB_OUTPUT
-        else
+        if [ "${{ github.event.inputs.overwrite_existing }}" == "true" ]; then
+          echo "Overwrite requested, will extract new data"
           echo "should_extract=true" >> $GITHUB_OUTPUT
+        else
+          python << 'EOF'
+        import os
+        import sys
+        from azure.storage.blob import BlobServiceClient
+        from datetime import datetime, timedelta
+        
+        # Configuration
+        TICKER = os.environ['TICKER']
+        account_name = os.environ['STORAGE_ACCOUNT_NAME']
+        access_key = os.environ['ACCESS_KEY']
+        container_name = os.environ['CONTAINER_NAME']
+        
+        # Initialize Azure client
+        blob_service_client = BlobServiceClient(
+            account_url=f"https://{account_name}.blob.core.windows.net",
+            credential=access_key
+        )
+        
+        # Check if data exists
+        blob_path = f'databento/{TICKER}_historical_data.json'
+        blob_client = blob_service_client.get_blob_client(
+            container=container_name,
+            blob=blob_path
+        )
+        
+        try:
+            # Check if blob exists and when it was last modified
+            properties = blob_client.get_blob_properties()
+            last_modified = properties.last_modified
+            
+            # Check if data is recent (updated within last 24 hours)
+            if datetime.utcnow().replace(tzinfo=last_modified.tzinfo) - last_modified < timedelta(hours=24):
+                print(f"Recent data exists for {TICKER} (updated {last_modified})")
+                print("Use overwrite_existing=true to force update")
+                print("should_extract=false", file=open(os.environ['GITHUB_OUTPUT'], 'a'))
+            else:
+                print(f"Data exists but is stale (last updated {last_modified})")
+                print("Will update with new data")
+                print("should_extract=true", file=open(os.environ['GITHUB_OUTPUT'], 'a'))
+        except:
+            print(f"No existing data found for {TICKER}")
+            print("should_extract=true", file=open(os.environ['GITHUB_OUTPUT'], 'a'))
+        EOF
         fi
         
     - name: Extract historical data from Databento
@@ -319,19 +363,137 @@ jobs:
         
         EOF
         
-    - name: Commit data file to repository
+    - name: Upload data to Azure Storage
       if: steps.check_data.outputs.should_extract == 'true'
+      env:
+        STORAGE_ACCOUNT_NAME: ${{ secrets.STORAGE_ACCOUNT_NAME }}
+        ACCESS_KEY: ${{ secrets.ACCESS_KEY }}
+        CONTAINER_NAME: ${{ secrets.CONTAINER_NAME }}
       run: |
-        git config --local user.email "action@github.com"
-        git config --local user.name "GitHub Action"
+        python << 'EOF'
+        import os
+        import json
+        import pandas as pd
+        from datetime import datetime
+        from azure.storage.blob import BlobServiceClient
         
-        DATA_FILE="data/${TICKER}_15min_pattern_ready.csv"
+        # Configuration
+        TICKER = os.environ['TICKER']
+        account_name = os.environ['STORAGE_ACCOUNT_NAME']
+        access_key = os.environ['ACCESS_KEY']
+        container_name = os.environ['CONTAINER_NAME']
         
-        if [ -f "$DATA_FILE" ]; then
-          git add "$DATA_FILE"
-          git commit -m "Add Databento historical data for ${TICKER}"
-          git push
-          echo "✅ Data file committed to repository"
-        else
-          echo "❌ Data file not found, commit skipped"
-        fi
+        # Read the CSV file
+        csv_file = f'data/{TICKER}_15min_pattern_ready.csv'
+        if not os.path.exists(csv_file):
+            print(f"❌ CSV file not found: {csv_file}")
+            exit(1)
+            
+        df = pd.read_csv(csv_file)
+        print(f"Loading {len(df)} records for {TICKER}")
+        
+        # Initialize Azure client
+        blob_service_client = BlobServiceClient(
+            account_url=f"https://{account_name}.blob.core.windows.net",
+            credential=access_key
+        )
+        
+        # Create container client
+        container_client = blob_service_client.get_container_client(container_name)
+        
+        # Define blob path
+        blob_path = f'databento/{TICKER}_historical_data.json'
+        
+        try:
+            # Try to download existing data
+            blob_client = container_client.get_blob_client(blob_path)
+            existing_data = blob_client.download_blob().readall()
+            existing_records = json.loads(existing_data)
+            print(f"Found existing data with {len(existing_records)} records")
+            
+            # Convert existing records to DataFrame for merging
+            existing_df = pd.DataFrame(existing_records)
+            existing_df['timestamp'] = pd.to_datetime(existing_df['timestamp'])
+            
+            # Convert new data timestamp
+            df['timestamp'] = pd.to_datetime(df['timestamp'])
+            
+            # Merge data (new data takes precedence for overlapping timestamps)
+            merged_df = pd.concat([existing_df, df]).drop_duplicates(
+                subset=['timestamp'], 
+                keep='last'
+            ).sort_values('timestamp')
+            
+            print(f"Merged data has {len(merged_df)} total records")
+            
+        except Exception as e:
+            print(f"No existing data found or error reading: {str(e)}")
+            print("Creating new dataset")
+            merged_df = df
+            merged_df['timestamp'] = pd.to_datetime(merged_df['timestamp'])
+            merged_df = merged_df.sort_values('timestamp')
+        
+        # Convert to JSON format
+        records = merged_df.to_dict('records')
+        
+        # Convert timestamps to ISO format for JSON serialization
+        for record in records:
+            record['timestamp'] = record['timestamp'].isoformat()
+        
+        # Create metadata
+        metadata = {
+            'ticker': TICKER,
+            'total_records': len(records),
+            'date_range': {
+                'start': records[0]['timestamp'],
+                'end': records[-1]['timestamp']
+            },
+            'last_updated': datetime.utcnow().isoformat(),
+            'source': 'databento',
+            'schema': 'ohlcv-15m'
+        }
+        
+        # Combine metadata and data
+        final_data = {
+            'metadata': metadata,
+            'data': records
+        }
+        
+        # Upload to Azure
+        json_data = json.dumps(final_data, indent=2)
+        blob_client = container_client.get_blob_client(blob_path)
+        blob_client.upload_blob(json_data, overwrite=True)
+        
+        print(f"✅ Successfully uploaded {TICKER} data to Azure")
+        print(f"   Blob path: {blob_path}")
+        print(f"   Total records: {len(records)}")
+        print(f"   Date range: {metadata['date_range']['start']} to {metadata['date_range']['end']}")
+        
+        # Also save a summary file
+        summary_path = f'databento/summary.json'
+        try:
+            # Get existing summary
+            summary_blob = container_client.get_blob_client(summary_path)
+            summary_data = json.loads(summary_blob.download_blob().readall())
+        except:
+            summary_data = {'tickers': {}}
+        
+        # Update summary
+        summary_data['tickers'][TICKER] = {
+            'last_updated': metadata['last_updated'],
+            'total_records': metadata['total_records'],
+            'date_range': metadata['date_range']
+        }
+        summary_data['last_updated'] = datetime.utcnow().isoformat()
+        
+        # Upload summary
+        summary_blob = container_client.get_blob_client(summary_path)
+        summary_blob.upload_blob(json.dumps(summary_data, indent=2), overwrite=True)
+        
+        print(f"✅ Updated summary file")
+        
+        # Clean up local CSV file (optional)
+        # os.remove(csv_file)
+        # print(f"🧹 Removed local CSV file")
+        
+        EOF
