@@ -36,10 +36,10 @@ else:
 
 # Import models
 try:
-    from nvda_v1 import nvda_v1_model
+    from nvda_v1 import momentum_shape_model
     from aapl_improved import aapl_improved_model
     from msft_improved import msft_improved_model
-    from v1_TSLA import v1_TSLA_model
+    from v1_TSLA import v1_tsla_model
 except ImportError as e:
     print(f"Error importing models: {e}")
     print("Current sys.path:")
@@ -49,10 +49,10 @@ except ImportError as e:
 
 # Model mapping
 MODELS = {
-    'NVDA': ('nvda_v1', nvda_v1_model),
+    'NVDA': ('nvda_v1', momentum_shape_model),
     'AAPL': ('aapl_improved', aapl_improved_model),
     'MSFT': ('msft_improved', msft_improved_model),
-    'TSLA': ('v1_TSLA', v1_TSLA_model)
+    'TSLA': ('v1_TSLA', v1_tsla_model)
 }
 
 def initialize_azure():
