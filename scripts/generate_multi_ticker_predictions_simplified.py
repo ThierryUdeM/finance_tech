@@ -21,7 +21,9 @@ from pathlib import Path
 project_root = Path(__file__).parent.parent
 sys.path.append(str(project_root))
 
-from ChartScanAI_Shiny.azure_utils import upload_to_azure, download_from_azure
+# Import Azure utilities
+sys.path.append(os.path.join(project_root, 'ChartScanAI_Shiny'))
+from azure_utils import upload_to_azure, download_from_azure
 
 def setup_logging(ticker):
     """Set up logging for the ticker"""
