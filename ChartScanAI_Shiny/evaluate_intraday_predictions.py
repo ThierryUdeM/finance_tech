@@ -13,8 +13,18 @@ import json
 import os
 import sys
 
-# Import the prediction generator
-from generate_nvda_predictions_simple import generate_predictions
+# Import prediction generator with robust fallback
+sys.path.append('..')  # Add parent directory to path
+try:
+    from generate_nvda_predictions_robust import robust_predictions as generate_predictions
+    print("Using robust prediction generator")
+except ImportError:
+    try:
+        from generate_nvda_predictions_enhanced import generate_enhanced_predictions as generate_predictions
+        print("Using enhanced prediction generator")
+    except ImportError:
+        from generate_nvda_predictions_simple import generate_predictions
+        print("Fallback to simple prediction generator")
 
 def load_prediction_history(history_file='prediction_history.json'):
     """Load historical predictions"""
