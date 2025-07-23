@@ -27,22 +27,45 @@ jobs:
       with:
         python-version: '3.10'
     
-    - name: Install Python dependencies
+    - name: Install TA-Lib C library
       run: |
-        # Upgrade pip and install build tools
-        python -m pip install --upgrade pip setuptools wheel
-        
-        # Install other dependencies first
+        set -e
+        sudo apt-get update
+        sudo apt-get install -y build-essential wget
+
+        TA_VER=0.4.0
+        wget -q http://prdownloads.sourceforge.net/ta-lib/ta-lib-${TA_VER}-src.tar.gz
+        tar -xzf ta-lib-${TA_VER}-src.tar.gz
+        cd ta-lib
+        ./configure --prefix=/usr/local
+        make -j2
+        sudo make install
+
+        # ---- make sure the linker sees it ----
+        echo "/usr/local/lib" | sudo tee /etc/ld.so.conf.d/ta-lib.conf
+        sudo ldconfig
+
+        # ---- fix the hyphen vs underscore name mismatch ----
+        sudo ln -sf /usr/local/lib/libta_lib.so /usr/local/lib/libta-lib.so
+        sudo ln -sf /usr/local/lib/libta_lib.a  /usr/local/lib/libta-lib.a
+
+        # Debug info
+        ls -l /usr/local/lib | grep ta_lib || true
+        ldconfig -p | grep ta_lib || true
+
+    - name: Install TA-Lib Python wrapper
+      env:
+        TA_LIBRARY_PATH: /usr/local/lib
+        TA_INCLUDE_PATH: /usr/local/include
+        LD_LIBRARY_PATH: /usr/local/lib:$LD_LIBRARY_PATH
+      run: |
+        pip install --upgrade pip setuptools wheel
+        pip install --no-build-isolation TA-Lib==0.4.28
+        python -c "import talib; print('TA-Lib version:', talib.__version__)"
+    
+    - name: Install other Python dependencies
+      run: |
         pip install yfinance pandas numpy azure-storage-blob python-dotenv
-        
-        # Install TA-Lib using prebuilt binary wheel (much simpler!)
-        pip install talib-binary
-        
-        # Verify installation
-        python -c "import talib; print(f'TA-Lib version: {talib.__version__}')"
-        
-        # Test a TA-Lib function to ensure it's working
-        python -c "import talib; import numpy as np; print('TA-Lib test:', talib.SMA(np.array([1,2,3,4,5], dtype=float), 3))"
     
     - name: Create config directory and .env file
       run: |
