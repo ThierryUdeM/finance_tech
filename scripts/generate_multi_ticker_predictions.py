@@ -23,8 +23,7 @@ from pathlib import Path
 project_root = Path(__file__).parent.parent
 sys.path.append(str(project_root))
 
-from directional_analysis.intraday_shape_matcher import ShapeMatcher
-from ChartScanAI_Shiny.azure_utils import upload_to_azure
+from ChartScanAI_Shiny.azure_utils import upload_to_azure, download_from_azure
 
 def setup_logging(ticker):
     """Set up logging for the ticker"""

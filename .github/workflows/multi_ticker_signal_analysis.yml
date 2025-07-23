@@ -244,7 +244,7 @@ jobs:
       if: steps.check_ticker.outputs.should_run == 'true'
       run: |
         echo "Generating signal predictions for ${{ matrix.ticker }}"
-        python scripts/generate_multi_ticker_predictions.py --ticker ${{ matrix.ticker }}
+        python scripts/generate_multi_ticker_predictions_simplified.py --ticker ${{ matrix.ticker }}
         
     - name: Evaluate recent predictions
       if: steps.check_ticker.outputs.should_run == 'true'
