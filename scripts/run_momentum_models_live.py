@@ -71,12 +71,14 @@ def initialize_azure():
     
     return blob_service_client.get_container_client(container_name)
 
-def fetch_recent_data(ticker, lookback_days=90):
-    """Fetch recent data from yfinance"""
+def fetch_recent_data(ticker, lookback_days=58):
+    """Fetch recent data from yfinance - max 59 days for 15min data"""
     print(f"\nFetching {lookback_days} days of data for {ticker}...")
     
     end_date = datetime.now()
     start_date = end_date - timedelta(days=lookback_days)
+    
+    print(f"  Date range: {start_date.strftime('%Y-%m-%d')} to {end_date.strftime('%Y-%m-%d')}")
     
     try:
         # Download 15-minute data
