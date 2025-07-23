@@ -1,23 +1,26 @@
-name: Simple Technical Scanner - NVDA (Legacy)
+name: Simple Technical Scanner - Multi-Ticker
 
 on:
   schedule:
     # Run every 15 minutes during market hours (9:30 AM - 4:00 PM ET)
-    # GitHub Actions uses UTC time
     - cron: '0,15,30,45 14-20 * * 1-5'  # EST: runs every 15 minutes
     - cron: '0,15,30,45 13-19 * * 1-5'  # EDT: runs every 15 minutes
   
   workflow_dispatch:  # Allow manual trigger
     inputs:
-      ticker:
-        description: 'Stock ticker'
-        required: true
-        default: 'NVDA'
+      tickers:
+        description: 'Comma-separated list of tickers (default: all)'
+        required: false
+        default: 'NVDA,AAPL,MSFT,BTC-USD,AC.TO'
         type: string
 
 jobs:
   scan-intraday:
     runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        ticker: [NVDA, AAPL, MSFT, BTC-USD, AC.TO]
+      fail-fast: false  # Continue other tickers even if one fails
     
     steps:
     - name: Check market hours
@@ -33,12 +36,17 @@ jobs:
         MARKET_OPEN=$((9 * 60 + 30))
         MARKET_CLOSE=$((16 * 60))
         
+        # Special handling for BTC (24/7 but align with US market hours)
+        if [ "${{ matrix.ticker }}" = "BTC-USD" ]; then
+          echo "BTC-USD trades 24/7, aligning with US market hours for consistency"
+        fi
+        
         if [ $CURRENT_DAY -le 5 ] && [ $CURRENT_TIME -ge $MARKET_OPEN ] && [ $CURRENT_TIME -lt $MARKET_CLOSE ]; then
           echo "market_open=true" >> $GITHUB_OUTPUT
-          echo "Market is open - running scan"
+          echo "Market is open - running ${{ matrix.ticker }} scan"
         else
           echo "market_open=false" >> $GITHUB_OUTPUT
-          echo "Market is closed - skipping scan"
+          echo "Market is closed - skipping ${{ matrix.ticker }} scan"
         fi
     
     - name: Checkout repository
@@ -67,17 +75,17 @@ jobs:
         AZURE_CONTAINER_NAME=${{ secrets.CONTAINER_NAME }}
         EOF
     
-    - name: Run simple technical scanner
+    - name: Run simple technical scanner for ${{ matrix.ticker }}
       if: steps.market-check.outputs.market_open == 'true' || github.event_name == 'workflow_dispatch'
       run: |
-        export TICKER="${{ github.event.inputs.ticker || 'NVDA' }}"
+        export TICKER="${{ matrix.ticker }}"
         python simple_technical_scanner.py
     
     - name: Upload logs
       if: always() && (steps.market-check.outputs.market_open == 'true' || github.event_name == 'workflow_dispatch')
       uses: actions/upload-artifact@v4
       with:
-        name: technical-scan-logs-${{ github.run_id }}
+        name: ${{ matrix.ticker }}-technical-scan-logs-${{ github.run_id }}
         path: |
           *.log
           current_signal.json
@@ -86,10 +94,16 @@ jobs:
 
   performance-summary:
     runs-on: ubuntu-latest
+    needs: scan-intraday
     # Run at 4:15 PM ET daily to generate performance report
     if: |
       github.event_name == 'schedule' && 
       (contains(github.event.schedule, '15 20') || contains(github.event.schedule, '15 21'))
+    
+    strategy:
+      matrix:
+        ticker: [NVDA, AAPL, MSFT, BTC-USD, AC.TO]
+      fail-fast: false
     
     steps:
     - name: Checkout repository
@@ -114,13 +128,14 @@ jobs:
         AZURE_CONTAINER_NAME=${{ secrets.CONTAINER_NAME }}
         EOF
     
-    - name: Generate performance summary
+    - name: Generate performance summary for ${{ matrix.ticker }}
       run: |
+        export TICKER="${{ matrix.ticker }}"
         python -c "
         from simple_technical_scanner import SimpleTechnicalScanner
         scanner = SimpleTechnicalScanner()
         summary = scanner.get_performance_summary()
-        print('Daily Performance Summary:')
+        print('${{ matrix.ticker }} Daily Performance Summary:')
         print(f'Total Signals: {summary[\"total_signals\"]}')
         print(f'Buy: {summary[\"buy_signals\"]}, Sell: {summary[\"sell_signals\"]}, Hold: {summary[\"hold_signals\"]}')
         print(f'Average Confidence: {summary[\"avg_confidence\"]:.1%}')
@@ -132,10 +147,13 @@ jobs:
       with:
         script: |
           const date = new Date().toISOString().split('T')[0];
+          const ticker = '${{ matrix.ticker }}';
+          const tickerLower = ticker.toLowerCase().replace('-', '');
+          
           github.rest.issues.create({
             owner: context.repo.owner,
             repo: context.repo.repo,
-            title: `Simple Technical Scanner Daily Summary - ${date}`,
-            body: 'Today\'s intraday technical signals have been analyzed. Check the performance_summary.json in Azure for detailed metrics.',
-            labels: ['automated', 'daily-report', 'technical']
+            title: `Simple Technical Scanner Daily Summary - ${ticker} - ${date}`,
+            body: `Today's ${ticker} intraday technical signals have been analyzed. Check the performance_summary.json in Azure for detailed metrics.`,
+            labels: ['automated', 'daily-report', 'technical', tickerLower]
           });
