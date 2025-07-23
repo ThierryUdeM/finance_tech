@@ -121,7 +121,7 @@ jobs:
         try:
             # Map common tickers to Databento symbols if needed
             symbol_mapping = {
-                'BTC-USD': 'BTC-USD',  # May need adjustment based on Databento's crypto symbols
+                'BTC-USD': 'BTCUSD',  # Try without hyphen for crypto
                 'AAPL': 'AAPL',
                 'MSFT': 'MSFT', 
                 'GOOGL': 'GOOGL',
@@ -132,38 +132,59 @@ jobs:
                 'QQQ': 'QQQ'
             }
             
-            databento_symbol = symbol_mapping.get(TICKER, TICKER)
-            print(f"Using Databento symbol: {databento_symbol}")
-            
-            # Determine dataset based on ticker
+            # Try multiple symbol variations for crypto
             if TICKER == 'BTC-USD':
-                dataset = 'GLBX.MDP3'  # Crypto dataset
-                venue = 'GLBX'
-            elif TICKER.endswith('.TO'):
-                dataset = 'XTOR.MDP3'  # Toronto Stock Exchange
-                venue = 'XTOR'
+                symbols_to_try = ['BTCUSD', 'BTC-USD', 'BTC.USD', 'XBTUSD']
+                datasets_to_try = ['GLBX.MDP3', 'DBEQ.BASIC']
             else:
-                dataset = 'XNAS.ITCH'  # NASDAQ for most US stocks
-                venue = 'XNAS'
+                databento_symbol = symbol_mapping.get(TICKER, TICKER)
+                symbols_to_try = [databento_symbol]
+                
+                # Determine dataset based on ticker
+                if TICKER.endswith('.TO'):
+                    datasets_to_try = ['XTOR.MDP3']  # Toronto Stock Exchange
+                else:
+                    datasets_to_try = ['XNAS.ITCH', 'DBEQ.BASIC']  # NASDAQ for most US stocks
             
-            print(f"Using dataset: {dataset}")
+            print(f"Will try symbols: {symbols_to_try}")
+            print(f"Will try datasets: {datasets_to_try}")
             
-            # Fetch OHLCV data at 1-minute intervals and resample to 15-minute
-            data = client.timeseries.get_range(
-                dataset=dataset,
-                symbols=[databento_symbol],
-                schema='ohlcv-1m',  # 1-minute OHLCV bars (15m is not supported)
-                start=START_DATE,
-                end=END_DATE,
-                limit=200000  # Increased limit for 1-minute data
-            )
+            # Try different combinations
+            df = None
+            for dataset in datasets_to_try:
+                for symbol in symbols_to_try:
+                    try:
+                        print(f"Trying {dataset} with symbol {symbol}...")
+                        data = client.timeseries.get_range(
+                            dataset=dataset,
+                            symbols=[symbol],
+                            schema='ohlcv-1m',  # 1-minute OHLCV bars
+                            start=START_DATE,
+                            end=END_DATE,
+                            limit=200000
+                        )
+                        
+                        # Convert to DataFrame first
+                        df = data.to_df()
+                        
+                        if not df.empty:
+                            print(f"✅ Success with {dataset} and symbol {symbol}")
+                            print(f"Got {len(df)} records")
+                            break
+                        else:
+                            print(f"No data for {dataset} with {symbol}")
+                            
+                    except Exception as e:
+                        print(f"Failed {dataset} with {symbol}: {str(e)}")
+                        continue
+                
+                if df is not None and not df.empty:
+                    break
             
-            if data.empty:
-                print(f"No data returned for {TICKER}. Check symbol mapping and dataset.")
+            if df is None or df.empty:
+                print(f"No data returned for {TICKER} after trying all combinations.")
+                print("Check symbol mapping, dataset availability, and API access.")
                 exit(1)
-            
-            # Convert to DataFrame and resample to 15-minute intervals
-            df = data.to_df()
             
             # Ensure we have the required columns
             required_columns = ['ts_event', 'open', 'high', 'low', 'close', 'volume']
