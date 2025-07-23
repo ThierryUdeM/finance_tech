@@ -38,6 +38,10 @@ jobs:
         tar -xzf ta-lib-${TA_VER}-src.tar.gz
         cd ta-lib
         ./configure --prefix=/usr/local
+        
+        # Delete src/tools to avoid build issues
+        rm -rf src/tools
+        
         make -j2
         sudo make install
 
