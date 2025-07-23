@@ -29,29 +29,30 @@ jobs:
     
     - name: Install TA-Lib C library
       run: |
-        set -e
-        sudo apt-get update
-        sudo apt-get install -y build-essential wget
+         set -e
+         sudo apt-get update
+         sudo apt-get install -y build-essential wget
 
-        TA_VER=0.4.0
-        wget -q http://prdownloads.sourceforge.net/ta-lib/ta-lib-${TA_VER}-src.tar.gz
-        tar -xzf ta-lib-${TA_VER}-src.tar.gz
-        cd ta-lib
-        ./configure --prefix=/usr/local
-        make -j2
-        sudo make install
-
-        # ---- make sure the linker sees it ----
-        echo "/usr/local/lib" | sudo tee /etc/ld.so.conf.d/ta-lib.conf
-        sudo ldconfig
-
-        # ---- fix the hyphen vs underscore name mismatch ----
-        sudo ln -sf /usr/local/lib/libta_lib.so /usr/local/lib/libta-lib.so
-        sudo ln -sf /usr/local/lib/libta_lib.a  /usr/local/lib/libta-lib.a
-
-        # Debug info
-        ls -l /usr/local/lib | grep ta_lib || true
-        ldconfig -p | grep ta_lib || true
+         TA_VER=0.4.0
+         wget -q http://prdownloads.sourceforge.net/ta-lib/ta-lib-${TA_VER}-src.tar.gz
+         tar -xzf ta-lib-${TA_VER}-src.tar.gz
+         cd ta-lib*   # folder is "ta-lib" or "ta-lib-0.4.0-src" depending on mirror
+    
+         ./configure --prefix=/usr/local --disable-static
+         # Build ONLY the core shared lib to avoid src/tools/*
+         make -C src ta_lib
+         sudo make -C src ta_lib install
+    
+         echo "/usr/local/lib" | sudo tee /etc/ld.so.conf.d/ta-lib.conf
+         sudo ldconfig
+    
+         # hyphen/underscore mismatch safety
+         sudo ln -sf /usr/local/lib/libta_lib.so /usr/local/lib/libta-lib.so || true
+         sudo ln -sf /usr/local/lib/libta_lib.a  /usr/local/lib/libta-lib.a  || true
+    
+         # Debug
+         ls -l /usr/local/lib | grep ta_lib || true
+         ldconfig -p | grep ta_lib || true
 
     - name: Install TA-Lib Python wrapper
       env:
