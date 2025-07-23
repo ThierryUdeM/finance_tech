@@ -27,30 +27,44 @@ jobs:
       with:
         python-version: '3.10'
     
-    - name: Install TA-Lib using Ubuntu packages
+    - name: Install TA-Lib C library
       run: |
-        # Install TA-Lib using Ubuntu package manager (more reliable)
         sudo apt-get update
-        sudo apt-get install -y libta-lib0-dev
+        sudo apt-get install -y build-essential wget
+        wget http://prdownloads.sourceforge.net/ta-lib/ta-lib-0.4.0-src.tar.gz
+        tar -xzvf ta-lib-0.4.0-src.tar.gz
+        cd ta-lib
+        ./configure --prefix=/usr
+        make
+        sudo make install
         
-        # Verify system installation
-        echo "Checking TA-Lib installation..."
-        ls -la /usr/include/ta-lib/ || echo "Headers not found"
-        ls -la /usr/lib/x86_64-linux-gnu/libta_lib* || echo "Library not found"
-        pkg-config --exists ta-lib && echo "TA-Lib found via pkg-config" || echo "TA-Lib not found via pkg-config"
+        # Verify installation
+        echo "Checking TA-Lib C library installation..."
+        ls /usr/include/ta-lib
+        ls /usr/lib | grep ta_lib
+        
+        # Update library cache
+        sudo ldconfig
+        
+        # Check if library is registered
+        ldconfig -p | grep ta_lib
     
     - name: Install Python dependencies
       run: |
-        python -m pip install --upgrade pip wheel
+        # Upgrade pip and install build tools
+        python -m pip install --upgrade pip setuptools wheel
         
         # Install other dependencies first
         pip install yfinance pandas numpy azure-storage-blob python-dotenv
         
-        # Install TA-Lib Python wrapper (should work with system TA-Lib)
+        # Install TA-Lib Python wrapper
         pip install TA-Lib
         
         # Verify installation
         python -c "import talib; print(f'TA-Lib version: {talib.__version__}')"
+        
+        # Test a TA-Lib function to ensure it's working
+        python -c "import talib; import numpy as np; print('TA-Lib test:', talib.SMA(np.array([1,2,3,4,5], dtype=float), 3))"
     
     - name: Create config directory and .env file
       run: |
