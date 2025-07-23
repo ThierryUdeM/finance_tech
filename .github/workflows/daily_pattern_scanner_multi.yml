@@ -32,27 +32,33 @@ jobs:
          set -e
          sudo apt-get update
          sudo apt-get install -y build-essential wget
-
+    
          TA_VER=0.4.0
-         wget -q http://prdownloads.sourceforge.net/ta-lib/ta-lib-${TA_VER}-src.tar.gz
-         tar -xzf ta-lib-${TA_VER}-src.tar.gz
-         cd ta-lib*   # folder is "ta-lib" or "ta-lib-0.4.0-src" depending on mirror
+         TAR=ta-lib-${TA_VER}-src.tar.gz
+         wget -q http://prdownloads.sourceforge.net/ta-lib/${TAR}
+         tar -xzf "$TAR"
+    
+         # Get the directory name from the tarball (first top-level entry)
+         TA_DIR=$(tar -tf "$TAR" | head -1 | cut -d/ -f1)
+         cd "$TA_DIR"
     
          ./configure --prefix=/usr/local --disable-static
-         # Build ONLY the core shared lib to avoid src/tools/*
+    
+         # Build ONLY the core lib to avoid src/tools/*
          make -C src ta_lib
          sudo make -C src ta_lib install
     
+         # Linker setup
          echo "/usr/local/lib" | sudo tee /etc/ld.so.conf.d/ta-lib.conf
          sudo ldconfig
     
-         # hyphen/underscore mismatch safety
+         # Hyphen vs underscore safety net
          sudo ln -sf /usr/local/lib/libta_lib.so /usr/local/lib/libta-lib.so || true
          sudo ln -sf /usr/local/lib/libta_lib.a  /usr/local/lib/libta-lib.a  || true
     
          # Debug
          ls -l /usr/local/lib | grep ta_lib || true
-         ldconfig -p | grep ta_lib || true
+         ldconfig -p | grep ta_lib || true  
 
     - name: Install TA-Lib Python wrapper
       env:
