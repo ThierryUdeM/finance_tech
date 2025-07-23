@@ -66,12 +66,12 @@ jobs:
         AZURE_CONTAINER_NAME=${{ secrets.CONTAINER_NAME }}
         EOF
     
-    - name: Run simple technical scanner for all tickers
+    - name: Run ML-optimized technical scanner for all tickers
       if: steps.market-check.outputs.market_open == 'true' || github.event_name == 'workflow_dispatch'
       run: |
-        # Override ticker list for multi-ticker processing
+        # Use optimized scanner with ML-derived improvements
         export TICKER="ALL"
-        python simple_technical_scanner.py
+        python simple_technical_scanner_optimized.py
     
     - name: Upload logs
       if: always() && (steps.market-check.outputs.market_open == 'true' || github.event_name == 'workflow_dispatch')
@@ -115,17 +115,19 @@ jobs:
         AZURE_CONTAINER_NAME=${{ secrets.CONTAINER_NAME }}
         EOF
     
-    - name: Generate performance summary for all tickers
+    - name: Generate ML-optimized performance summary for all tickers
       run: |
         python -c "
-        from simple_technical_scanner import SimpleTechnicalScanner
-        scanner = SimpleTechnicalScanner()
+        from simple_technical_scanner_optimized import OptimizedTechnicalScanner
+        scanner = OptimizedTechnicalScanner()
         summary = scanner.get_performance_summary()
         if summary:
-            print('Multi-Ticker Daily Performance Summary:')
+            print('ML-Optimized Multi-Ticker Daily Performance Summary:')
             print(f'Total Signals: {summary[\"total_signals\"]}')
-            print(f'Buy: {summary[\"buy_signals\"]}, Sell: {summary[\"sell_signals\"]}, Hold: {summary[\"hold_signals\"]}')
+            print(f'Buy: {summary[\"buy_signals\"]} ({summary[\"signal_distribution\"][\"buy_pct\"]}%), Sell: {summary[\"sell_signals\"]} ({summary[\"signal_distribution\"][\"sell_pct\"]}%), Hold: {summary[\"hold_signals\"]} ({summary[\"signal_distribution\"][\"hold_pct\"]}%)')
             print(f'Average Confidence: {summary[\"avg_confidence\"]:.1%}')
+            print(f'High Confidence Signals: {summary[\"confidence_distribution\"][\"high\"]} ({summary[\"confidence_distribution\"][\"high\"]/summary[\"total_signals\"]*100:.1f}%)')
+            print(f'Scanner Version: {summary[\"scanner_version\"]}')
         else:
             print('No sufficient data for performance summary yet')
         "
@@ -140,7 +142,15 @@ jobs:
           github.rest.issues.create({
             owner: context.repo.owner,
             repo: context.repo.repo,
-            title: `Simple Technical Scanner Daily Summary - Multi-Ticker - ${date}`,
-            body: `Today's multi-ticker intraday technical signals have been analyzed for NVDA, AAPL, MSFT, BTC-USD, and AC.TO. Check the technical_evaluations.json in Azure for detailed metrics.`,
-            labels: ['automated', 'daily-report', 'technical', 'multi-ticker']
+            title: `ML-Optimized Technical Scanner Daily Summary - Multi-Ticker - ${date}`,
+            body: `Today's multi-ticker intraday technical signals have been analyzed using ML-optimized parameters and enhanced logic for NVDA, AAPL, MSFT, BTC-USD, AC.TO, GOOGL, and AMZN. 
+            
+            **Improvements:**
+            - ML-derived weight optimization based on 2.5 years of NVDA data
+            - Enhanced dynamic thresholds with volatility adaptation
+            - Improved signal confidence calibration
+            - Advanced risk management with dynamic stop-losses
+            
+            Check the technical_evaluations.json in Azure for detailed metrics and enhanced tracking.`,
+            labels: ['automated', 'daily-report', 'technical', 'multi-ticker', 'ml-optimized']
           });
