@@ -60,7 +60,7 @@ jobs:
         LD_LIBRARY_PATH: /usr/local/lib:$LD_LIBRARY_PATH
       run: |
         pip install --upgrade pip setuptools wheel
-        pip install --no-build-isolation TA-Lib==0.4.28
+        pip install TA-Lib
         python -c "import talib; print('TA-Lib version:', talib.__version__)"
     
     - name: Install other Python dependencies
