@@ -59,20 +59,13 @@ jobs:
         # Set default dates if not provided
         if [ -z "${{ github.event.inputs.start_date }}" ]; then
           # Default to 2.5 years ago (using Python for cross-platform compatibility)
-          START_DATE=$(python -c "
-import datetime
-date_2_5_years_ago = datetime.datetime.now() - datetime.timedelta(days=912)  # 2.5 years
-print(date_2_5_years_ago.strftime('%Y-%m-%d'))
-")
+          START_DATE=$(python -c "import datetime; print((datetime.datetime.now() - datetime.timedelta(days=912)).strftime('%Y-%m-%d'))")
         else
           START_DATE="${{ github.event.inputs.start_date }}"
         fi
         
         if [ -z "${{ github.event.inputs.end_date }}" ]; then
-          END_DATE=$(python -c "
-import datetime
-print(datetime.datetime.now().strftime('%Y-%m-%d'))
-")
+          END_DATE=$(python -c "import datetime; print(datetime.datetime.now().strftime('%Y-%m-%d'))")
         else
           END_DATE="${{ github.event.inputs.end_date }}"
         fi
