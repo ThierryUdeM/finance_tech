@@ -192,30 +192,38 @@ jobs:
             
             # Check available columns and adapt
             print(f"Available columns: {list(df.columns)}")
+            print(f"Index name: {df.index.name}")
+            print(f"Index type: {type(df.index)}")
             
-            # Find the timestamp column (could be ts_event, ts_recv, or index)
-            timestamp_col = None
-            if 'ts_event' in df.columns:
-                timestamp_col = 'ts_event'
-            elif 'ts_recv' in df.columns:
-                timestamp_col = 'ts_recv'
-            elif df.index.name and 'time' in df.index.name.lower():
-                # Timestamp might be the index
-                df.reset_index(inplace=True)
-                timestamp_col = df.columns[0]
+            # Check if the index is already a DatetimeIndex (common for OHLCV data)
+            if isinstance(df.index, pd.DatetimeIndex):
+                print("Timestamp is already in the index")
+                # Just rename the index to 'timestamp' for consistency
+                df.index.name = 'timestamp'
             else:
-                # Try to find any column with 'time' in the name
-                for col in df.columns:
-                    if 'time' in col.lower() or 'ts' in col.lower():
-                        timestamp_col = col
-                        break
-            
-            if timestamp_col is None:
-                # If no timestamp column found, assume index is timestamp
-                df.reset_index(inplace=True)
-                timestamp_col = 'index'
-            
-            print(f"Using timestamp column: {timestamp_col}")
+                # Find the timestamp column
+                timestamp_col = None
+                if 'ts_event' in df.columns:
+                    timestamp_col = 'ts_event'
+                elif 'ts_recv' in df.columns:
+                    timestamp_col = 'ts_recv'
+                else:
+                    # Try to find any column with 'time' in the name
+                    for col in df.columns:
+                        if 'time' in col.lower() or 'ts' in col.lower():
+                            timestamp_col = col
+                            break
+                
+                if timestamp_col:
+                    print(f"Using timestamp column: {timestamp_col}")
+                    df['timestamp'] = pd.to_datetime(df[timestamp_col])
+                    df.set_index('timestamp', inplace=True)
+                else:
+                    # If no timestamp column found, the index might be numeric (row numbers)
+                    # This might mean the data doesn't have timestamps, which would be unusual
+                    print("WARNING: No timestamp found in columns or index")
+                    print(f"First few rows of data:\n{df.head()}")
+                    exit(1)
             
             # Ensure we have OHLCV columns
             required_ohlcv = ['open', 'high', 'low', 'close', 'volume']
@@ -226,8 +234,6 @@ jobs:
             
             # Resample 1-minute data to 15-minute intervals
             print("Resampling 1-minute data to 15-minute intervals...")
-            df['timestamp'] = pd.to_datetime(df[timestamp_col])
-            df.set_index('timestamp', inplace=True)
             
             # Resample to 15-minute intervals
             df_resampled = df.resample('15T').agg({
