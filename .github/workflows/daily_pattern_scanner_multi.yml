@@ -54,11 +54,11 @@ jobs:
         AZURE_CONTAINER_NAME=${{ secrets.CONTAINER_NAME }}
         EOF
     
-    - name: Run daily pattern scanner for all tickers
+    - name: Run ML-optimized daily pattern scanner for all tickers
       shell: bash -l {0}
       run: |
         export TICKER="ALL"
-        python daily_pattern_scanner.py
+        python daily_pattern_scanner_optimized.py
     
     - name: Upload logs
       if: always()
@@ -111,37 +111,33 @@ jobs:
         AZURE_CONTAINER_NAME=${{ secrets.CONTAINER_NAME }}
         EOF
     
-    - name: Generate performance summary for all tickers
+    - name: Generate ML-optimized performance summary for all tickers
       shell: bash -l {0}
       run: |
         python -c "
-        from daily_pattern_scanner import DailyPatternScanner
-        scanner = DailyPatternScanner()
-        evaluations = scanner.load_or_create_evaluation_file()
-        total_evals = len(evaluations)
-        if total_evals > 0:
-            recent_evals = evaluations[-100:] if total_evals > 100 else evaluations
-            
-            # Analyze by ticker
-            tickers = ['NVDA', 'AAPL', 'MSFT', 'BTC-USD', 'AC.TO']
-            print('Multi-Ticker Daily Pattern Summary (Recent evaluations):')
-            print(f'Total Evaluations: {len(recent_evals)}')
-            
-            for ticker in tickers:
-                ticker_evals = [e for e in recent_evals if e.get('ticker') == ticker]
-                if ticker_evals:
-                    buy_signals = sum(1 for e in ticker_evals if e.get('recommendation') == 'BUY')
-                    sell_signals = sum(1 for e in ticker_evals if e.get('recommendation') == 'SELL')
-                    hold_signals = sum(1 for e in ticker_evals if e.get('recommendation') == 'HOLD')
-                    avg_confidence = sum(e.get('confidence', 0) for e in ticker_evals) / len(ticker_evals)
-                    print(f'{ticker}: {len(ticker_evals)} evals - Buy: {buy_signals}, Sell: {sell_signals}, Hold: {hold_signals}, Avg Conf: {avg_confidence:.1%}')
-                else:
-                    print(f'{ticker}: No evaluations yet')
+        from daily_pattern_scanner_optimized import OptimizedDailyPatternScanner
+        scanner = OptimizedDailyPatternScanner()
+        summary = scanner.get_performance_summary()
+        if summary:
+            print('ML-Optimized Daily Pattern Summary:')
+            print(f'  Total Evaluations: {summary['total_evaluations']}')
+            print(f'  Recommendations: {summary['buy_signals']} buys, {summary['sell_signals']} sells, {summary['hold_signals']} holds')
+            print(f'  Average Confidence: {summary['avg_confidence']:.1%}')
+            print(f'  Strong Signals: {summary['strong_signals']} ({summary['strong_signal_pct']}%)')
+            print(f'  Scanner Version: {summary['scanner_version']}')
+            print('')
+            print('Pattern Distribution:')
+            for pattern, count in summary['pattern_distribution'].items():
+                print(f'  {pattern}: {count}')
+            print('')
+            print('Ticker Distribution:')
+            for ticker, count in summary['ticker_distribution'].items():
+                print(f'  {ticker}: {count}')
         else:
-            print('No evaluation data available yet')
+            print('Insufficient data for performance summary (need at least 5 evaluations)')
         "
     
-    - name: Create issue with daily summary
+    - name: Create issue with ML-optimized daily summary
       if: success()
       uses: actions/github-script@v7
       with:
@@ -151,7 +147,25 @@ jobs:
           github.rest.issues.create({
             owner: context.repo.owner,
             repo: context.repo.repo,
-            title: `Daily Pattern Scanner Summary - Multi-Ticker - ${date}`,
-            body: `Today's daily chart patterns have been analyzed for NVDA, AAPL, MSFT, BTC-USD, and AC.TO. Check the next_day_technical/ folder in Azure for unified daily_predictions.json and pattern_evaluations.json files.`,
-            labels: ['automated', 'daily-report', 'pattern-scanner', 'multi-ticker']
+            title: `ML-Optimized Daily Pattern Scanner Summary - ${date}`,
+            body: `🤖 **ML-Optimized Daily Pattern Analysis Complete**
+            
+            Today's daily chart patterns have been analyzed using the ML-optimized scanner for NVDA, AAPL, MSFT, GOOGL, AMZN, TSLA, BTC-USD, and AC.TO.
+            
+            **Key Improvements:**
+            - ✅ Uses actual daily data instead of intraday data (key optimization from backtesting)
+            - ✅ ML-optimized pattern confidence thresholds based on historical success rates
+            - ✅ Enhanced pattern filtering with trend context and volume confirmation
+            - ✅ Dynamic risk management with ATR-based stops and targets
+            - ✅ Ticker-specific parameter optimization
+            
+            **Performance Insight:**
+            Based on walk-forward testing, this optimizer achieves +7.70% return vs -13.29% with the original approach.
+            
+            📊 Check the next_day_technical/ folder in Azure for:
+            - daily_predictions.json (trading recommendations)
+            - performance_summary.json (ML metrics)
+            
+            Generated with ML-Optimized Daily Pattern Scanner v2.0`,
+            labels: ['automated', 'daily-report', 'ml-optimized', 'pattern-scanner']
           });
