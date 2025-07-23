@@ -123,6 +123,11 @@ jobs:
         grep -v -E "TA-Lib|tradingpatterns" requirements_pattern_scanner.txt > requirements_no_talib.txt
         pip install -r requirements_no_talib.txt
         
+        # Set environment variables for TA-Lib compilation
+        export LD_LIBRARY_PATH=/usr/lib:/usr/lib64:/usr/local/lib:$LD_LIBRARY_PATH
+        export LIBRARY_PATH=/usr/lib:/usr/lib64:/usr/local/lib:$LIBRARY_PATH
+        export CPATH=/usr/include:/usr/local/include:$CPATH
+        
         # Install TA-Lib Python wrapper - use older version compatible with TA-Lib 0.4.0
         pip install --no-cache-dir TA-Lib==0.4.19
         
@@ -213,6 +218,11 @@ jobs:
         # Install all requirements except TA-Lib first
         grep -v -E "TA-Lib|tradingpatterns" requirements_pattern_scanner.txt > requirements_no_talib.txt
         pip install -r requirements_no_talib.txt
+        
+        # Set environment variables for TA-Lib compilation
+        export LD_LIBRARY_PATH=/usr/lib:/usr/lib64:/usr/local/lib:$LD_LIBRARY_PATH
+        export LIBRARY_PATH=/usr/lib:/usr/lib64:/usr/local/lib:$LIBRARY_PATH
+        export CPATH=/usr/include:/usr/local/include:$CPATH
         
         # Install TA-Lib Python wrapper - use older version compatible with TA-Lib 0.4.0
         pip install --no-cache-dir TA-Lib==0.4.19
@@ -342,6 +352,11 @@ jobs:
         # Install all requirements except TA-Lib first
         grep -v -E "TA-Lib|tradingpatterns" requirements_pattern_scanner.txt > requirements_no_talib.txt
         pip install -r requirements_no_talib.txt
+        
+        # Set environment variables for TA-Lib compilation
+        export LD_LIBRARY_PATH=/usr/lib:/usr/lib64:/usr/local/lib:$LD_LIBRARY_PATH
+        export LIBRARY_PATH=/usr/lib:/usr/lib64:/usr/local/lib:$LIBRARY_PATH
+        export CPATH=/usr/include:/usr/local/include:$CPATH
         
         # Install TA-Lib Python wrapper - use older version compatible with TA-Lib 0.4.0
         pip install --no-cache-dir TA-Lib==0.4.19
