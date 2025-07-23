@@ -152,7 +152,7 @@ jobs:
             data = client.timeseries.get_range(
                 dataset=dataset,
                 symbols=[databento_symbol],
-                schema='ohlcv-15m',  # 15-minute OHLCV bars
+                schema='ohlcv-1m',  # 15-minute OHLCV bars
                 start=START_DATE,
                 end=END_DATE,
                 limit=50000  # Should cover 2.5 years of 15-min data
