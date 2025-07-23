@@ -28,7 +28,7 @@ jobs:
       ticker_count: ${{ steps.get_tickers.outputs.ticker_count }}
     steps:
     - name: Checkout repository
-      uses: actions/checkout@v3
+      uses: actions/checkout@v4
       
     - name: Detect available tickers with historical data
       id: get_tickers
@@ -96,10 +96,10 @@ jobs:
     
     steps:
     - name: Checkout repository
-      uses: actions/checkout@v3
+      uses: actions/checkout@v4
       
     - name: Set up Python 3.9
-      uses: actions/setup-python@v4
+      uses: actions/setup-python@v5
       with:
         python-version: '3.9'
         
@@ -189,7 +189,7 @@ jobs:
         
     - name: Upload logs as artifacts
       if: always() && steps.check_ticker.outputs.should_run == 'true'
-      uses: actions/upload-artifact@v3
+      uses: actions/upload-artifact@v4
       with:
         name: signal-logs-${{ matrix.ticker }}-${{ github.run_number }}
         path: |
@@ -204,10 +204,10 @@ jobs:
     
     steps:
     - name: Checkout repository
-      uses: actions/checkout@v3
+      uses: actions/checkout@v4
       
     - name: Set up Python 3.9
-      uses: actions/setup-python@v4
+      uses: actions/setup-python@v5
       with:
         python-version: '3.9'
         
