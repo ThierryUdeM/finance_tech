@@ -22,56 +22,30 @@ jobs:
     - name: Checkout repository
       uses: actions/checkout@v4
     
-    - name: Set up Python
-      uses: actions/setup-python@v5
+    - name: Set up Python with conda (includes TA-Lib)
+      uses: conda-incubator/setup-miniconda@v3
       with:
         python-version: '3.10'
+        miniforge-version: latest
+        use-mamba: true
+        channels: conda-forge
+        channel-priority: strict
     
-    - name: Install TA-Lib C library
+    - name: Install dependencies using conda/mamba
+      shell: bash -l {0}
       run: |
-        set -e
-        sudo apt-get update
-        sudo apt-get install -y build-essential wget
-
-        TA_VER=0.4.0
-        wget -q http://prdownloads.sourceforge.net/ta-lib/ta-lib-${TA_VER}-src.tar.gz
-        tar -xzf ta-lib-${TA_VER}-src.tar.gz
-        cd ta-lib
-        ./configure --prefix=/usr/local
+        # Install TA-Lib and other dependencies via conda-forge
+        mamba install -y ta-lib pandas numpy yfinance
         
-        # Delete src/tools to avoid build issues
-        rm -rf src/tools
+        # Install Azure dependencies via pip
+        pip install azure-storage-blob python-dotenv
         
-        make -j2
-        sudo make install
-
-        # ---- make sure the linker sees it ----
-        echo "/usr/local/lib" | sudo tee /etc/ld.so.conf.d/ta-lib.conf
-        sudo ldconfig
-
-        # ---- fix the hyphen vs underscore name mismatch ----
-        sudo ln -sf /usr/local/lib/libta_lib.so /usr/local/lib/libta-lib.so
-        sudo ln -sf /usr/local/lib/libta_lib.a  /usr/local/lib/libta-lib.a
-
-        # Debug info
-        ls -l /usr/local/lib | grep ta_lib || true
-        ldconfig -p | grep ta_lib || true
-
-    - name: Install TA-Lib Python wrapper
-      env:
-        TA_LIBRARY_PATH: /usr/local/lib
-        TA_INCLUDE_PATH: /usr/local/include
-        LD_LIBRARY_PATH: /usr/local/lib:$LD_LIBRARY_PATH
-      run: |
-        pip install --upgrade pip setuptools wheel
-        pip install TA-Lib
+        # Verify installation
         python -c "import talib; print('TA-Lib version:', talib.__version__)"
-    
-    - name: Install other Python dependencies
-      run: |
-        pip install yfinance pandas numpy azure-storage-blob python-dotenv
+        python -c "import numpy as np; import talib; print('TA-Lib test:', talib.SMA(np.array([1,2,3,4,5], dtype=float), 3))"
     
     - name: Create config directory and .env file
+      shell: bash -l {0}
       run: |
         mkdir -p config
         cat > config/.env << EOF
@@ -81,6 +55,7 @@ jobs:
         EOF
     
     - name: Run daily pattern scanner for all tickers
+      shell: bash -l {0}
       run: |
         export TICKER="ALL"
         python daily_pattern_scanner.py

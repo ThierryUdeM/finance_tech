@@ -1,0 +1,28 @@
+# Dockerfile with pre-installed TA-Lib
+FROM python:3.10-slim
+
+# Install build dependencies
+RUN apt-get update && apt-get install -y \
+    build-essential \
+    wget \
+    && rm -rf /var/lib/apt/lists/*
+
+# Install TA-Lib C library
+RUN cd /tmp \
+    && wget -q http://prdownloads.sourceforge.net/ta-lib/ta-lib-0.4.0-src.tar.gz \
+    && tar -xzf ta-lib-0.4.0-src.tar.gz \
+    && cd ta-lib \
+    && ./configure --prefix=/usr/local \
+    && make -j$(nproc) \
+    && make install \
+    && cd / \
+    && rm -rf /tmp/ta-lib*
+
+# Update library cache
+RUN ldconfig
+
+# Pre-install TA-Lib Python wrapper
+RUN pip install --upgrade pip setuptools wheel numpy TA-Lib
+
+# Verify installation
+RUN python -c "import talib; print('TA-Lib successfully installed:', talib.__version__)"
