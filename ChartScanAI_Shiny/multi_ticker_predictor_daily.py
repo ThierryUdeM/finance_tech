@@ -462,13 +462,13 @@ class DailyYOLOPredictor:
             results['recommendation_strength'] = f"Based on {len(signals_collected)} pattern(s)"
             results['average_volume_score'] = round(avg_volume_score, 3)
         
-        # Save to Azure
+        # Save to Azure - only to yolo_daily folder to avoid conflicts with Signal Analysis
         blob_name = f"yolo_daily/{ticker}/{timestamp.strftime('%Y-%m-%d')}/analysis.json"
         self.save_to_azure(results, blob_name)
         
-        # Also save to standard predictions folder for Shiny app
-        shiny_blob_name = f"predictions/{ticker}/{timestamp.strftime('%Y-%m-%d')}/daily.json"
-        self.save_to_azure(results, shiny_blob_name)
+        # Also save with 'daily' suffix for backward compatibility
+        daily_blob_name = f"yolo_daily/{ticker}/{timestamp.strftime('%Y-%m-%d')}/daily.json"
+        self.save_to_azure(results, daily_blob_name)
         
         logger.info(f"{ticker} daily analysis complete: {results['recommendation']}")
         

@@ -74,13 +74,12 @@ class BTCPredictor:
         try:
             btc = yf.Ticker(CONFIG['ticker'])
             
-            # Determine period based on interval - Pure Intraday Signals
-            # Use minimum period that provides sufficient recent data for pattern recognition
+            # Determine period based on interval
             period_map = {
-                '15m': '1d',   # ~16 hours of 15-min data for intraday patterns
-                '1h': '1d',    # ~16 hours of hourly data for intraday patterns  
-                '4h': '1d',    # ~16 hours of 4-hour data for daily patterns
-                '1d': '5d'     # 5 days of daily data for weekly patterns
+                '15m': '5d',
+                '1h': '2wk',
+                '4h': '3mo',
+                '1d': '6mo'
             }
             
             period = period_map.get(interval, '1mo')

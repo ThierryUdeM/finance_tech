@@ -72,21 +72,16 @@ get_latest_prediction <- function(container, ticker) {
                         format(check_time, "%Y-%m-%d"),
                         format(check_time, "%H"))
     
-    print(paste("YOLOv8 - Trying to load:", blob_path, "for", ticker))
-    
     tryCatch({
       temp_file <- tempfile()
       storage_download(container, blob_path, temp_file)
       data <- fromJSON(temp_file)
       unlink(temp_file)
-      print(paste("YOLOv8 - Successfully loaded:", blob_path))
       return(data)
     }, error = function(e) {
-      print(paste("YOLOv8 - Failed to load:", blob_path, "- Error:", e$message))
       NULL
     })
   }
-  print(paste("YOLOv8 - No predictions found for", ticker, "in last 6 hours"))
   NULL
 }
 
@@ -96,8 +91,6 @@ get_recent_predictions <- function(container, ticker, hours = 24) {
   
   predictions <- list()
   current_time <- with_tz(Sys.time(), "UTC")
-  
-  print(paste("YOLOv8 - Loading recent predictions for", ticker, "- last", hours, "hours"))
   
   for (h in 0:(hours-1)) {
     check_time <- current_time - hours(h)
@@ -113,11 +106,10 @@ get_recent_predictions <- function(container, ticker, hours = 24) {
       unlink(temp_file)
       predictions[[length(predictions) + 1]] <- data
     }, error = function(e) {
-      # Skip if not found - don't print every miss to avoid spam
+      # Skip if not found
     })
   }
   
-  print(paste("YOLOv8 - Found", length(predictions), "recent predictions for", ticker))
   predictions
 }
 
@@ -486,11 +478,7 @@ server <- function(input, output, session) {
     ticker_id <- gsub("[.-]", "_", ticker)
     container <- azure_container()
     
-    print(paste("YOLOv8 - Starting data fetch for", ticker))
-    
     if (!is.null(container)) {
-      print(paste("YOLOv8 - Azure container connected for", ticker))
-      
       # Get latest prediction
       ticker_data[[ticker_id]]$latest_prediction <- get_latest_prediction(container, ticker)
       
@@ -508,10 +496,6 @@ server <- function(input, output, session) {
       ticker_data[[ticker_id]]$performance_summary <- calculate_performance_summary(
         ticker_data[[ticker_id]]$evaluations
       )
-      
-      print(paste("YOLOv8 - Completed data fetch for", ticker))
-    } else {
-      print(paste("YOLOv8 - No Azure container connection for", ticker))
     }
   }
   
