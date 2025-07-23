@@ -27,42 +27,17 @@ jobs:
       with:
         python-version: '3.10'
     
-    - name: Install system dependencies
+    - name: Install TA-Lib using Ubuntu packages
       run: |
+        # Install TA-Lib using Ubuntu package manager (more reliable)
         sudo apt-get update
-        sudo apt-get install -y build-essential pkg-config libhdf5-dev
-    
-    - name: Install TA-Lib
-      run: |
-        # Download and compile TA-Lib from source
-        wget http://prdownloads.sourceforge.net/ta-lib/ta-lib-0.4.0-src.tar.gz
-        tar -xzf ta-lib-0.4.0-src.tar.gz
-        cd ta-lib/
-        ./configure --prefix=/usr
-        make
-        sudo make install
-        cd ..
+        sudo apt-get install -y libta-lib0-dev
         
-        # Update library cache and create symlinks
-        sudo ldconfig
-        
-        # Verify installation and fix library naming issues
-        echo "Checking installed files..."
-        ls -la /usr/lib/libta_lib* || echo "No libta_lib found in /usr/lib"
-        ls -la /usr/lib/libta-lib* || echo "No libta-lib found in /usr/lib"
-        ls -la /usr/include/ta-lib/ || echo "No headers found"
-        
-        # Create symlinks with both naming conventions if needed
-        if [ -f /usr/lib/libta_lib.so.0.0.0 ]; then
-          sudo ln -sf /usr/lib/libta_lib.so.0.0.0 /usr/lib/libta_lib.so
-          sudo ln -sf /usr/lib/libta_lib.so.0.0.0 /usr/lib/libta_lib.so.0
-          # Also create hyphenated versions that some systems expect
-          sudo ln -sf /usr/lib/libta_lib.so.0.0.0 /usr/lib/libta-lib.so
-          sudo ln -sf /usr/lib/libta_lib.so.0.0.0 /usr/lib/libta-lib.so.0
-        fi
-        
-        # Update library cache again
-        sudo ldconfig -v 2>/dev/null | grep -E 'ta_lib|ta-lib' || echo "Library not found in ldconfig"
+        # Verify system installation
+        echo "Checking TA-Lib installation..."
+        ls -la /usr/include/ta-lib/ || echo "Headers not found"
+        ls -la /usr/lib/x86_64-linux-gnu/libta_lib* || echo "Library not found"
+        pkg-config --exists ta-lib && echo "TA-Lib found via pkg-config" || echo "TA-Lib not found via pkg-config"
     
     - name: Install Python dependencies
       run: |
@@ -71,22 +46,8 @@ jobs:
         # Install other dependencies first
         pip install yfinance pandas numpy azure-storage-blob python-dotenv
         
-        # Install TA-Lib Python wrapper with specific version and environment variables
-        export LD_LIBRARY_PATH=/usr/lib:/usr/lib64:/usr/local/lib:$LD_LIBRARY_PATH
-        export LIBRARY_PATH=/usr/lib:/usr/lib64:/usr/local/lib:$LIBRARY_PATH
-        export CPATH=/usr/include:/usr/local/include:$CPATH
-        
-        # Try to install TA-Lib Python wrapper with retry
-        echo "Attempting to install TA-Lib Python wrapper..."
-        for i in {1..3}; do
-          if pip install --no-cache-dir TA-Lib==0.4.19; then
-            echo "TA-Lib installation successful on attempt $i"
-            break
-          else
-            echo "TA-Lib installation failed on attempt $i, retrying..."
-            sleep 5
-          fi
-        done
+        # Install TA-Lib Python wrapper (should work with system TA-Lib)
+        pip install TA-Lib
         
         # Verify installation
         python -c "import talib; print(f'TA-Lib version: {talib.__version__}')"

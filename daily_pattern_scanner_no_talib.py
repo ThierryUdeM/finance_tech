@@ -37,7 +37,8 @@ class DailyPatternScanner:
         
         # Check for mode override
         self.pattern_mode = os.getenv('PATTERN_MODE', 'daily')
-        self.azure_folder = f"next_day_technical/{self.ticker.lower()}"
+        # Use unified folder structure instead of ticker-specific folders
+        self.azure_folder = "next_day_technical"
         
         if not all([self.storage_account, self.storage_key, self.container_name]):
             raise ValueError("Azure storage credentials not found")
