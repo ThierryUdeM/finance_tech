@@ -82,6 +82,10 @@ jobs:
     
     - name: Run ensemble models for all tickers
       shell: bash -l {0}
+      env:
+        AZURE_STORAGE_ACCOUNT: ${{ secrets.AZURE_STORAGE_ACCOUNT }}
+        AZURE_STORAGE_KEY: ${{ secrets.AZURE_STORAGE_KEY }}
+        AZURE_CONTAINER_NAME: ${{ secrets.AZURE_CONTAINER_NAME }}
       run: |
         # Create a script to run models individually and save outputs
         cat > run_ensemble_models.py << 'EOF'
@@ -92,6 +96,7 @@ jobs:
         import numpy as np
         from datetime import datetime, timedelta
         import yfinance as yf
+        from azure.storage.blob import BlobServiceClient
         import warnings
         warnings.filterwarnings('ignore')
         
@@ -113,15 +118,68 @@ jobs:
         
         # Global cache for ticker data
         TICKER_DATA_CACHE = {}
+        HISTORICAL_DATA_CACHE = {}
         
-        def fetch_all_ticker_data(lookback_days=90):
-            """Fetch data for all tickers at once to minimize API calls"""
+        def get_blob_service_client():
+            """Initialize Azure Blob Service Client"""
+            account_name = os.environ.get('AZURE_STORAGE_ACCOUNT') or os.environ.get('STORAGE_ACCOUNT_NAME')
+            account_key = os.environ.get('AZURE_STORAGE_KEY') or os.environ.get('ACCESS_KEY')
+            
+            if not account_name or not account_key:
+                raise ValueError("Azure storage credentials not found in environment variables")
+            
+            connection_string = f"DefaultEndpointsProtocol=https;AccountName={account_name};AccountKey={account_key};EndpointSuffix=core.windows.net"
+            return BlobServiceClient.from_connection_string(connection_string)
+        
+        def load_historical_data_from_azure(ticker):
+            """Load 2.5 years of historical data from Azure databento folder"""
+            if ticker in HISTORICAL_DATA_CACHE:
+                return HISTORICAL_DATA_CACHE[ticker]
+            
+            try:
+                blob_service_client = get_blob_service_client()
+                container_name = os.environ.get('AZURE_CONTAINER_NAME') or os.environ.get('CONTAINER_NAME')
+                
+                blob_path = f'databento/{ticker}_historical_data.json'
+                blob_client = blob_service_client.get_blob_client(container=container_name, blob=blob_path)
+                
+                # Download the blob
+                blob_data = blob_client.download_blob().readall()
+                data = json.loads(blob_data)
+                
+                # Convert to DataFrame
+                df = pd.DataFrame(data)
+                if 'timestamp' in df.columns:
+                    df['timestamp'] = pd.to_datetime(df['timestamp'])
+                    df.set_index('timestamp', inplace=True)
+                
+                # Ensure column names are lowercase
+                df.columns = [col.lower() for col in df.columns]
+                
+                # Calculate returns and vwap if not present
+                if 'returns' not in df.columns:
+                    df['returns'] = df['close'].pct_change()
+                if 'vwap' not in df.columns:
+                    df['vwap'] = (df['close'] * df['volume']).cumsum() / df['volume'].cumsum()
+                
+                HISTORICAL_DATA_CACHE[ticker] = df
+                print(f"Loaded {len(df)} historical records for {ticker} from Azure")
+                return df
+                
+            except Exception as e:
+                print(f"Error loading historical data for {ticker} from Azure: {str(e)}")
+                return None
+        
+        def fetch_all_ticker_data(lookback_days=1):
+            """Fetch current data for all tickers at once to minimize API calls"""
             global TICKER_DATA_CACHE
             
-            print("Fetching data for all tickers in one batch...")
+            print("Fetching current data for all tickers in one batch...")
             try:
+                # Fetch only 1 day of current 15m data from Yahoo
                 end_date = datetime.now()
                 start_date = end_date - timedelta(days=lookback_days)
+                print(f"Date range: {start_date} to {end_date}")
                 
                 # Download all tickers at once
                 data = yf.download(
@@ -169,8 +227,8 @@ jobs:
                         time.sleep(3)
                     fetch_data(ticker, lookback_days)
         
-        def fetch_data(ticker, lookback_days=90):
-            """Fetch and prepare data for model"""
+        def fetch_data(ticker, lookback_days=1):
+            """Fetch current data for model predictions"""
             global TICKER_DATA_CACHE
             import time
             
@@ -189,6 +247,7 @@ jobs:
                         print(f"Retry attempt {attempt + 1} for {ticker}")
                         time.sleep(retry_delay * attempt)  # Exponential backoff
                     
+                    # Fetch only 1 day of current data for predictions
                     end_date = datetime.now()
                     start_date = end_date - timedelta(days=lookback_days)
                     
@@ -217,14 +276,27 @@ jobs:
             """Run ensemble model and extract detailed outputs"""
             print(f"Running model for {ticker}...")
             
-            data = fetch_data(ticker)
-            if data is None or len(data) < 1600:
+            # Load historical data from Azure for pattern matching
+            historical_data = load_historical_data_from_azure(ticker)
+            if historical_data is None:
+                print(f"No historical data available for {ticker} in Azure")
                 return None
             
-            # Split data
-            train_size = 60 * 26  # 60 days
-            train_data = data.iloc[-train_size-26:-26].copy()
-            test_data = data.iloc[-26:].copy()
+            # Fetch current data from Yahoo
+            current_data = fetch_data(ticker)
+            if current_data is None:
+                print(f"No current data available for {ticker} from Yahoo")
+                return None
+                
+            print(f"Historical data shape for {ticker}: {historical_data.shape}")
+            print(f"Current data shape for {ticker}: {current_data.shape}")
+            
+            # Use ALL 2.5 years of historical data as the pattern library
+            # The momentum model will search through this entire history
+            train_data = historical_data.copy()
+            
+            # Use current data for predictions (last few hours)
+            test_data = current_data.iloc[-26:].copy()  # Last 6.5 hours of current data
             
             try:
                 # Run model

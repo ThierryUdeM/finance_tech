@@ -27,7 +27,7 @@ from ensemble_msft_v2 import ensemble_msft_v2
 from market_regime import classify_regime
 
 
-def fetch_latest_data(ticker, lookback_days=90):
+def fetch_latest_data(ticker, lookback_days=30):
     """Fetch latest 15-minute data for ticker"""
     import time
     
