@@ -301,8 +301,18 @@ jobs:
             
             print("Fetching current intraday data for all tickers...")
             
-            # Check if we have cached data for today
-            cache_file = f"live_data_{datetime.now().strftime('%Y%m%d')}.parquet"
+            # Check if we have cached data for today or previous trading day
+            # Determine which date we're actually fetching
+            now = datetime.now()
+            if now.time() < now.replace(hour=9, minute=30).time():
+                # Before market open, we'll fetch previous day
+                cache_date = now - timedelta(days=1)
+                while cache_date.weekday() >= 5:  # Skip weekends
+                    cache_date = cache_date - timedelta(days=1)
+            else:
+                cache_date = now
+            
+            cache_file = f"live_data_{cache_date.strftime('%Y%m%d')}.parquet"
             
             # Try to use cached data first
             if check_azure_cache(cache_file):
@@ -338,13 +348,40 @@ jobs:
                         print(f"Retry attempt {attempt + 1} - waiting {delay} seconds...")
                         time.sleep(delay)
                     
-                    # For 15-minute data, we can only get today's data from Yahoo Finance
-                    # The models will use the 2.5 years of historical data from Azure
-                    end_date = datetime.now()
-                    start_date = end_date.replace(hour=0, minute=0, second=0, microsecond=0)
+                    # For 15-minute data, handle market hours and data availability
+                    now = datetime.now()
+                    
+                    # Debug: Print current system time
+                    print(f"Current time: {now}")
+                    
+                    # Check if market is open (9:30 AM - 4:00 PM ET)
+                    market_open = now.replace(hour=9, minute=30, second=0, microsecond=0)
+                    market_close = now.replace(hour=16, minute=0, second=0, microsecond=0)
+                    
+                    # If before market open, use previous trading day
+                    if now.time() < market_open.time():
+                        print("Market not yet open. Using previous trading day's data...")
+                        # Go back to previous trading day
+                        end_date = now - timedelta(days=1)
+                        while end_date.weekday() >= 5:  # Skip weekends
+                            end_date = end_date - timedelta(days=1)
+                        # Set end time to market close
+                        end_date = end_date.replace(hour=16, minute=0, second=0, microsecond=0)
+                    else:
+                        # Market is open or closed for today, use current time
+                        end_date = now
+                    
+                    # Start from beginning of trading day (4 AM for pre-market)
+                    start_date = end_date.replace(hour=4, minute=0, second=0, microsecond=0)
+                    
+                    # If we're looking at a different day, adjust start date
+                    if end_date.date() != now.date():
+                        start_date = end_date.replace(hour=4, minute=0, second=0, microsecond=0)
                     
                     # Download all tickers at once - just today's intraday data
-                    print(f"Downloading today's intraday data for: {', '.join(ALL_TICKERS)}")
+                    print(f"Downloading intraday data for: {', '.join(ALL_TICKERS)}")
+                    print(f"Date range: {start_date} to {end_date}")
+                    
                     data = yf.download(
                         tickers=ALL_TICKERS,
                         start=start_date,
