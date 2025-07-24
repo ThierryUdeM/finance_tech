@@ -1,5 +1,9 @@
 name: Complete Trading Signal Pipeline
 
+permissions:
+  contents: read
+  issues: write  # Required for creating issues
+
 on:
   schedule:
     # Run every 15 minutes during market hours (9:30 AM - 4:00 PM ET, Monday-Friday)
@@ -408,11 +412,21 @@ jobs:
           
           // Create issue if manually triggered
           if (context.eventName === 'workflow_dispatch') {
-            github.rest.issues.create({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              title: `Trading Signals - ${new Date().toLocaleDateString()}`,
-              body: comment,
-              labels: ['trading-signals', 'automated']
-            });
+            try {
+              await github.rest.issues.create({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                title: `Trading Signals - ${new Date().toLocaleDateString()}`,
+                body: comment,
+                labels: ['trading-signals', 'automated']
+              });
+              console.log('Issue created successfully');
+            } catch (error) {
+              console.log('Note: Could not create issue. To enable issue creation:');
+              console.log('1. Go to Settings > Actions > General');
+              console.log('2. Under "Workflow permissions", select "Read and write permissions"');
+              console.log('3. Or add issues: write permission to the workflow file');
+              console.log('\nSummary Report:\n');
+              console.log(comment);
+            }
           }
