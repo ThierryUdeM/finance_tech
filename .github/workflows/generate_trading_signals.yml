@@ -94,7 +94,9 @@ jobs:
     
     - name: Upload signals to Azure
       env:
-        AZURE_STORAGE_CONNECTION_STRING: ${{ secrets.AZURE_STORAGE_CONNECTION_STRING }}
+        STORAGE_ACCOUNT_NAME: ${{ secrets.STORAGE_ACCOUNT_NAME }}
+        CONTAINER_NAME: ${{ secrets.CONTAINER_NAME }}
+        ACCESS_KEY: ${{ secrets.ACCESS_KEY }}
       run: |
         # Install Azure CLI
         pip install azure-storage-blob
@@ -105,17 +107,20 @@ jobs:
         from azure.storage.blob import BlobServiceClient
         from datetime import datetime
         
-        # Get connection string
-        connection_string = os.environ.get('AZURE_STORAGE_CONNECTION_STRING')
-        if not connection_string:
-            print("Error: AZURE_STORAGE_CONNECTION_STRING not set")
+        # Get Azure credentials
+        account_name = os.environ.get('STORAGE_ACCOUNT_NAME')
+        container_name = os.environ.get('CONTAINER_NAME')
+        access_key = os.environ.get('ACCESS_KEY')
+        
+        if not all([account_name, container_name, access_key]):
+            print("Error: Azure credentials not set")
             exit(1)
+        
+        # Create connection string from components
+        connection_string = f"DefaultEndpointsProtocol=https;AccountName={account_name};AccountKey={access_key};EndpointSuffix=core.windows.net"
         
         # Create blob service client
         blob_service_client = BlobServiceClient.from_connection_string(connection_string)
-        
-        # Container name
-        container_name = "trading-signals"
         
         # Files to upload
         files = [
