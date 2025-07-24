@@ -10,7 +10,7 @@ from typing import Dict, Tuple, Optional, Callable
 import warnings
 warnings.filterwarnings('ignore')
 
-from .market_regime import classify_regime, get_regime_weights, smooth_regime
+from market_regime import classify_regime, get_regime_weights, smooth_regime
 
 
 class EnsembleModel:

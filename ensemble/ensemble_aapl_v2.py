@@ -12,10 +12,10 @@ import os
 # Add parent paths for imports
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from .ensemble_base_v2 import EnsembleModelV2
-from .momentum_shapematching.aapl_improved import aapl_improved_model
-from .simple_technical.simple_technical_aapl import simple_technical_aapl
-from .regime_weights import aapl_regime_weights
+from ensemble_base_v2 import EnsembleModelV2
+from momentum_shapematching.aapl_improved import aapl_improved_model
+from simple_technical.simple_technical_aapl import simple_technical_aapl
+from regime_weights import aapl_regime_weights
 
 
 def ensemble_aapl_v2(train_data: pd.DataFrame, test_data: pd.DataFrame, **kwargs) -> pd.DataFrame:

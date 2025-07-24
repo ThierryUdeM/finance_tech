@@ -12,7 +12,7 @@ from scipy.special import expit
 import warnings
 warnings.filterwarnings('ignore')
 
-from .market_regime import classify_regime, smooth_regime
+from market_regime import classify_regime, smooth_regime
 
 
 class EnsembleModelV2:

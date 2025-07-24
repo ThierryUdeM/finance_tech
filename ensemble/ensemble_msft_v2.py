@@ -12,10 +12,10 @@ import os
 # Add parent paths for imports
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from .ensemble_base_v2 import EnsembleModelV2
-from .momentum_shapematching.msft_improved import msft_improved_model
-from .simple_technical.simple_technical_msft import simple_technical_msft
-from .regime_weights import msft_regime_weights
+from ensemble_base_v2 import EnsembleModelV2
+from momentum_shapematching.msft_improved import msft_improved_model
+from simple_technical.simple_technical_msft import simple_technical_msft
+from regime_weights import msft_regime_weights
 
 
 def ensemble_msft_v2(train_data: pd.DataFrame, test_data: pd.DataFrame, **kwargs) -> pd.DataFrame:

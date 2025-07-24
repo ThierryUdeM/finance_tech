@@ -13,9 +13,9 @@ import os
 # Add parent paths for imports
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from .ensemble_base import EnsembleModel
-from .momentum_shapematching.nvda_v1 import momentum_shape_model
-from .simple_technical.simple_technical_nvda import simple_technical_nvda
+from ensemble_base import EnsembleModel
+from momentum_shapematching.nvda_v1 import momentum_shape_model
+from simple_technical.simple_technical_nvda import simple_technical_nvda
 
 
 def ensemble_nvda(train_data: pd.DataFrame, test_data: pd.DataFrame, **kwargs) -> pd.DataFrame:
