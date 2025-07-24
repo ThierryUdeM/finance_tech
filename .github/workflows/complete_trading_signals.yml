@@ -93,6 +93,7 @@ jobs:
         STORAGE_ACCOUNT_NAME: ${{ secrets.STORAGE_ACCOUNT_NAME }}
         ACCESS_KEY: ${{ secrets.ACCESS_KEY }}
         CONTAINER_NAME: ${{ secrets.CONTAINER_NAME }}
+        CLEAR_CACHE: 'true'  # Force fresh data fetch
       run: |
         # Create a script to run models individually and save outputs
         cat > run_ensemble_models.py << 'EOF'
@@ -305,20 +306,26 @@ jobs:
             
             # Try to use cached data first
             if check_azure_cache(cache_file):
-                print(f"Using cached data from {cache_file}")
+                print(f"Found cached data from {cache_file}")
                 if load_cached_data(cache_file):
-                    # Check if data is recent (within last hour)
+                    # Check if we have sufficient data (at least 20 rows for each ticker)
+                    min_required_rows = 20
                     for ticker in ALL_TICKERS:
-                        if ticker in TICKER_DATA_CACHE and len(TICKER_DATA_CACHE[ticker]) > 0:
-                            # Data is good, continue
-                            continue
+                        if ticker in TICKER_DATA_CACHE:
+                            rows = len(TICKER_DATA_CACHE[ticker])
+                            if rows < min_required_rows:
+                                print(f"Insufficient cached data for {ticker}: {rows} rows < {min_required_rows} required")
+                                TICKER_DATA_CACHE.clear()
+                                break
                         else:
-                            print(f"No cached data for {ticker}, fetching fresh data...")
+                            print(f"No cached data for {ticker}")
                             TICKER_DATA_CACHE.clear()
                             break
                     else:
-                        # All tickers have data
+                        # All tickers have sufficient data
+                        print(f"Using cached data with sufficient rows for all tickers")
                         return
+                print("Cached data insufficient, fetching fresh data...")
             
             # Fetch all tickers in one request
             max_retries = 3
@@ -426,10 +433,22 @@ jobs:
             if 'returns' not in test_data.columns:
                 test_data['returns'] = test_data['close'].pct_change()
             if 'vwap' not in test_data.columns or test_data['vwap'].isna().all():
-                test_data['vwap'] = (test_data['close'] * test_data['volume']).cumsum() / test_data['volume'].cumsum()
+                # Safe VWAP calculation
+                cumulative_volume = test_data['volume'].cumsum()
+                cumulative_volume = cumulative_volume.replace(0, 1)  # Avoid division by zero
+                test_data['vwap'] = (test_data['close'] * test_data['volume']).cumsum() / cumulative_volume
             
             # Fill any NaN values
             test_data = test_data.ffill().bfill()
+            
+            # Ensure we have enough data for indicators
+            if len(test_data) < 14:  # Most indicators need at least 14 periods
+                print(f"Warning: Only {len(test_data)} rows for {ticker}, padding with historical data")
+                # Get some recent historical data to pad
+                if len(historical_data) > 50:
+                    padding_data = historical_data.iloc[-50:].copy()
+                    test_data = pd.concat([padding_data, test_data]).iloc[-50:]
+                    print(f"Padded test_data to {len(test_data)} rows")
             
             try:
                 # Run model
@@ -495,6 +514,22 @@ jobs:
             'AAPL': ensemble_aapl_v2,
             'MSFT': ensemble_msft_v2
         }
+        
+        # Clear any stale cache to ensure fresh data
+        import os
+        if os.environ.get('CLEAR_CACHE', 'false').lower() == 'true':
+            print("CLEAR_CACHE is set, removing cached data...")
+            try:
+                blob_service_client = get_blob_service_client()
+                container_name = os.environ.get('AZURE_CONTAINER_NAME') or os.environ.get('CONTAINER_NAME')
+                cache_file = f"live_data_{datetime.now().strftime('%Y%m%d')}.parquet"
+                blob_path = f'cache/{cache_file}'
+                blob_client = blob_service_client.get_blob_client(container=container_name, blob=blob_path)
+                if blob_client.exists():
+                    blob_client.delete_blob()
+                    print(f"Deleted cache file: {blob_path}")
+            except Exception as e:
+                print(f"Error deleting cache: {str(e)}")
         
         # Fetch today's intraday data for all tickers with rate limiting protection
         fetch_all_ticker_data()
