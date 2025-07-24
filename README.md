@@ -1,36 +1,44 @@
-# YOLOv8 Chart Analysis
+# Pattern Scanner Workflow
 
-This folder contains the YOLOv8-based technical analysis system that detects chart patterns and generates trading signals.
+This folder contains only the essential files needed for the GitHub Actions pattern scanner workflow.
 
-## Structure
+## Files Included
 
-- **ChartScanAI/** - Core YOLOv8 model and weights
-  - `weights/custom_yolov8.pt` - Trained model weights
-  
-- **ChartScanAI_Shiny/** - Analysis scripts and Shiny app
-  - `multi_ticker_predictor_azure.py` - Original multi-ticker predictor
-  - `multi_ticker_predictor_azure_optimized.py` - Optimized version with consolidated storage
-  - `btc_predictor_azure.py` - Bitcoin-specific predictor
-  - Other supporting scripts
+- `.github/workflows/pattern_scanner.yml` - GitHub Actions workflow that runs every 15 minutes during trading hours
+- `combined_pattern_scanner_gh.py` - Main scanner using TradingPatternScanner (84.5% accuracy) and TA-Lib
+- `pattern_evaluator.py` - End-of-day evaluation of detected patterns
+- `pattern_signal_tracker.py` - Tracks and evaluates pattern signals
+- `requirements_pattern_scanner.txt` - Python dependencies
 
-- **.github/workflows/** - GitHub Actions workflows
-  - `multi-ticker-predictions.yml` - Runs hourly predictions for BTC, NVDA, AC.TO
-  - `btc-predictions.yml` - Bitcoin-only predictions (consider disabling)
+## Setup Instructions
 
-## Setup
+1. **Copy this folder to your GitHub repository**
 
-1. Ensure Azure credentials are set in GitHub Secrets:
-   - `STORAGE_ACCOUNT_NAME`
-   - `ACCESS_KEY`
-   - `CONTAINER_NAME`
+2. **Set up GitHub Secrets** (Settings → Secrets and variables → Actions):
+   - `STORAGE_ACCOUNT_NAME` - Your Azure storage account name
+   - `ACCESS_KEY` - Your Azure storage account access key
+   - `CONTAINER_NAME` - Your Azure container name
 
-2. The workflows will run automatically on schedule or can be triggered manually
+3. **Create config/.env file** (for local testing):
+   ```
+   AZURE_STORAGE_ACCOUNT=your_storage_account
+   AZURE_STORAGE_KEY=your_access_key
+   AZURE_CONTAINER_NAME=your_container_name
+   ```
 
-## Optimization
+4. **Push to GitHub** and the workflow will run automatically
 
-The optimized version (`multi_ticker_predictor_azure_optimized.py`) consolidates storage to reduce Azure operations:
-- All predictions in one file: `consolidated/predictions_latest.json`
-- All evaluations in one file: `consolidated/evaluations_latest.json`
-- Automatic cleanup of data older than 7 days
+## Features
 
-To switch to the optimized version, update the workflow to run `multi_ticker_predictor_azure_optimized.py` instead.
+- Detects chart patterns using TradingPatternScanner (84.5% accuracy)
+- Detects 60+ candlestick patterns using TA-Lib
+- Runs every 15 minutes during market hours
+- Saves results to Azure blob storage
+- End-of-day evaluation of pattern success rates
+- Multi-ticker support (NVDA, AAPL, MSFT, GOOGL, TSLA, SPY, QQQ)
+
+## Requirements
+
+- Python 3.10+
+- TradingPatternScanner (installed from GitHub)
+- TA-Lib (built from source in workflow)

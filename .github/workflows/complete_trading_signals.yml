@@ -95,13 +95,13 @@ jobs:
         sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
         
         # Import ensemble models
-        from walk_forward_tests.model.hybrid_momentum_technical.ensemble_nvda import ensemble_nvda
-        from walk_forward_tests.model.hybrid_momentum_technical.ensemble_tsla import ensemble_tsla
-        from walk_forward_tests.model.hybrid_momentum_technical.ensemble_aapl_v2 import ensemble_aapl_v2
-        from walk_forward_tests.model.hybrid_momentum_technical.ensemble_msft_v2 import ensemble_msft_v2
+        from ensemble.ensemble_nvda import ensemble_nvda
+        from ensemble.ensemble_tsla import ensemble_tsla
+        from ensemble.ensemble_aapl_v2 import ensemble_aapl_v2
+        from ensemble.ensemble_msft_v2 import ensemble_msft_v2
         
         # Import market regime
-        from walk_forward_tests.model.hybrid_momentum_technical.market_regime import classify_regime
+        from ensemble.market_regime import classify_regime
         
         def fetch_data(ticker, lookback_days=90):
             """Fetch and prepare data for model"""
@@ -213,14 +213,14 @@ jobs:
     - name: Generate trading signals
       shell: bash -l {0}
       run: |
-        cd github_ready
+        cd ensemble
         python generate_trading_signals.py
         cd ..
     
     - name: Generate position sizing report
       shell: bash -l {0}
       run: |
-        cd github_ready
+        cd ensemble
         python position_sizing_calculator.py
         cd ..
     
@@ -265,18 +265,18 @@ jobs:
                 outputs['model_outputs'] = json.load(f)
         
         # Trading signals
-        if os.path.exists('github_ready/trading_signals_latest.json'):
-            with open('github_ready/trading_signals_latest.json', 'r') as f:
+        if os.path.exists('ensemble/trading_signals_latest.json'):
+            with open('ensemble/trading_signals_latest.json', 'r') as f:
                 outputs['trading_signals'] = json.load(f)
         
         # Signal summary
-        if os.path.exists('github_ready/actionable_summary_latest.json'):
-            with open('github_ready/actionable_summary_latest.json', 'r') as f:
+        if os.path.exists('ensemble/actionable_summary_latest.json'):
+            with open('ensemble/actionable_summary_latest.json', 'r') as f:
                 outputs['signal_summary'] = json.load(f)
         
         # Position sizing
-        if os.path.exists('github_ready/position_sizing_report.json'):
-            with open('github_ready/position_sizing_report.json', 'r') as f:
+        if os.path.exists('ensemble/position_sizing_report.json'):
+            with open('ensemble/position_sizing_report.json', 'r') as f:
                 outputs['position_sizing'] = json.load(f)
         
         # Create master output file
@@ -288,9 +288,9 @@ jobs:
         # Files to upload
         files_to_upload = [
             ('ensemble_model_outputs.json', 'model_outputs/latest.json'),
-            ('github_ready/trading_signals_latest.json', 'signals/latest.json'),
-            ('github_ready/actionable_summary_latest.json', 'summary/latest.json'),
-            ('github_ready/position_sizing_report.json', 'sizing/latest.json')
+            ('ensemble/trading_signals_latest.json', 'signals/latest.json'),
+            ('ensemble/actionable_summary_latest.json', 'summary/latest.json'),
+            ('ensemble/position_sizing_report.json', 'sizing/latest.json')
         ]
         
         # Upload individual files
@@ -376,8 +376,8 @@ jobs:
           }
           
           // Read signal summary
-          if (fs.existsSync('github_ready/actionable_summary_latest.json')) {
-            const summary = JSON.parse(fs.readFileSync('github_ready/actionable_summary_latest.json', 'utf8'));
+          if (fs.existsSync('ensemble/actionable_summary_latest.json')) {
+            const summary = JSON.parse(fs.readFileSync('ensemble/actionable_summary_latest.json', 'utf8'));
             
             comment += '### Signal Summary\n';
             comment += `- Total Signals: ${summary.total_signals}\n`;

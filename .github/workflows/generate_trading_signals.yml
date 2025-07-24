@@ -78,7 +78,7 @@ jobs:
     - name: Generate trading signals
       shell: bash -l {0}
       run: |
-        cd github_ready
+        cd ensemble
         python generate_trading_signals.py
     
     - name: Upload signals to Azure
@@ -145,7 +145,7 @@ jobs:
         print("Signal upload complete!")
         EOF
         
-        cd github_ready
+        cd ensemble
         python upload_signals.py
     
     - name: Create summary comment
@@ -156,7 +156,7 @@ jobs:
           const fs = require('fs');
           
           // Read summary file
-          const summaryPath = 'github_ready/actionable_summary_latest.json';
+          const summaryPath = 'ensemble/actionable_summary_latest.json';
           if (fs.existsSync(summaryPath)) {
             const summary = JSON.parse(fs.readFileSync(summaryPath, 'utf8'));
             
