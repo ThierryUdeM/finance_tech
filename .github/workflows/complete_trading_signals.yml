@@ -115,6 +115,15 @@ jobs:
         # Print yfinance version for debugging
         print(f"yfinance version: {yf.__version__}")
         
+        # Test basic yfinance functionality
+        print("\nDEBUG: Testing basic yfinance functionality...")
+        try:
+            test = yf.Ticker("AAPL")
+            info = test.info
+            print(f"DEBUG: Successfully retrieved info for AAPL - Price: ${info.get('regularMarketPrice', 'N/A')}")
+        except Exception as e:
+            print(f"DEBUG: Failed to get basic ticker info: {str(e)}")
+        
         # Import ensemble models directly
         from ensemble_nvda import ensemble_nvda
         from ensemble_tsla import ensemble_tsla
@@ -354,46 +363,121 @@ jobs:
                     # Debug: Print current system time
                     print(f"Current time: {now}")
                     
-                    # Check if market is open (9:30 AM - 4:00 PM ET)
-                    market_open = now.replace(hour=9, minute=30, second=0, microsecond=0)
-                    market_close = now.replace(hour=16, minute=0, second=0, microsecond=0)
+                    # Try to get recent data, but if today fails, fall back to previous days
+                    # This handles holidays, data delays, or API issues
+                    attempts = 0
+                    max_lookback = 5  # Try up to 5 days back
                     
-                    # If before market open, use previous trading day
-                    if now.time() < market_open.time():
-                        print("Market not yet open. Using previous trading day's data...")
-                        # Go back to previous trading day
-                        end_date = now - timedelta(days=1)
-                        while end_date.weekday() >= 5:  # Skip weekends
-                            end_date = end_date - timedelta(days=1)
-                        # Set end time to market close
-                        end_date = end_date.replace(hour=16, minute=0, second=0, microsecond=0)
-                    else:
-                        # Market is open or closed for today, use current time
-                        end_date = now
-                    
-                    # Start from beginning of trading day (4 AM for pre-market)
-                    start_date = end_date.replace(hour=4, minute=0, second=0, microsecond=0)
-                    
-                    # If we're looking at a different day, adjust start date
-                    if end_date.date() != now.date():
+                    while attempts < max_lookback:
+                        if attempts == 0:
+                            # First try today's data
+                            end_date = now
+                            print(f"Attempting to fetch today's data...")
+                        else:
+                            # Fall back to previous days
+                            days_back = attempts
+                            end_date = now - timedelta(days=days_back)
+                            # Skip weekends
+                            while end_date.weekday() >= 5:
+                                end_date = end_date - timedelta(days=1)
+                                days_back += 1
+                            print(f"Attempting to fetch data from {days_back} day(s) ago...")
+                        
+                        # Set start to beginning of that trading day
                         start_date = end_date.replace(hour=4, minute=0, second=0, microsecond=0)
+                        
+                        # If looking at today and before market open, use yesterday
+                        if attempts == 0 and now.time() < now.replace(hour=9, minute=30).time():
+                            print("Market not yet open, using previous trading day...")
+                            attempts = 1
+                            continue
                     
-                    # Download all tickers at once - just today's intraday data
-                    print(f"Downloading intraday data for: {', '.join(ALL_TICKERS)}")
-                    print(f"Date range: {start_date} to {end_date}")
-                    
-                    data = yf.download(
-                        tickers=ALL_TICKERS,
-                        start=start_date,
-                        end=end_date,
-                        interval='15m',
-                        group_by='ticker',
-                        threads=False,  # Single thread as recommended
-                        progress=False
-                    )
-                    
-                    if data.empty:
-                        raise Exception("No data returned from yfinance")
+                        # Try to download data for this date range
+                        print(f"Downloading intraday data for: {', '.join(ALL_TICKERS)}")
+                        print(f"Date range: {start_date} to {end_date}")
+                        
+                        try:
+                            # First try a single ticker to see if the API is working
+                            print(f"\nDEBUG: Testing API with single ticker (NVDA)...")
+                            test_ticker = yf.Ticker("NVDA")
+                            test_info = test_ticker.info
+                            print(f"DEBUG: Ticker info retrieved - Market: {test_info.get('market', 'N/A')}, Currency: {test_info.get('currency', 'N/A')}")
+                            
+                            # Try to get the ticker history
+                            print(f"DEBUG: Attempting to fetch history for date range...")
+                            print(f"DEBUG: Start date: {start_date} (type: {type(start_date)})")
+                            print(f"DEBUG: End date: {end_date} (type: {type(end_date)})")
+                            
+                            # Try with period first
+                            print(f"DEBUG: Testing with period='1d'...")
+                            test_period = test_ticker.history(period='1d', interval='15m')
+                            print(f"DEBUG: Period test shape: {test_period.shape}")
+                            
+                            # Now try with dates
+                            test_history = test_ticker.history(
+                                start=start_date,
+                                end=end_date,
+                                interval='15m'
+                            )
+                            print(f"DEBUG: Single ticker history shape: {test_history.shape}")
+                            print(f"DEBUG: History dates: {test_history.index.min()} to {test_history.index.max()}" if not test_history.empty else "DEBUG: No history data")
+                            
+                            # Also try with string dates
+                            print(f"DEBUG: Testing with string dates...")
+                            test_str = test_ticker.history(
+                                start=start_date.strftime('%Y-%m-%d'),
+                                end=end_date.strftime('%Y-%m-%d'),
+                                interval='15m'
+                            )
+                            print(f"DEBUG: String date test shape: {test_str.shape}")
+                            
+                            # Now try the bulk download
+                            print(f"\nDEBUG: Attempting bulk download...")
+                            data = yf.download(
+                                tickers=ALL_TICKERS,
+                                start=start_date,
+                                end=end_date,
+                                interval='15m',
+                                group_by='ticker',
+                                threads=False,  # Single thread as recommended
+                                progress=False,
+                                show_errors=True  # Show download errors
+                            )
+                            
+                            print(f"DEBUG: Download completed. Data type: {type(data)}")
+                            print(f"DEBUG: Data shape: {data.shape if hasattr(data, 'shape') else 'N/A'}")
+                            
+                            if data.empty:
+                                print(f"DEBUG: Data is empty. Trying different parameters...")
+                                # Try without group_by
+                                data_alt = yf.download(
+                                    tickers=ALL_TICKERS[0],  # Just one ticker
+                                    start=start_date,
+                                    end=end_date,
+                                    interval='15m',
+                                    progress=False
+                                )
+                                print(f"DEBUG: Alternative download shape: {data_alt.shape if hasattr(data_alt, 'shape') else 'N/A'}")
+                                raise Exception("No data returned from yfinance")
+                            
+                            # If we got data, break out of the loop
+                            print(f"Successfully fetched data from {end_date.date()}")
+                            break
+                            
+                        except Exception as e:
+                            print(f"\nDEBUG: Exception type: {type(e).__name__}")
+                            print(f"DEBUG: Exception message: {str(e)}")
+                            
+                            # Try to get more error details
+                            import traceback
+                            print(f"DEBUG: Traceback:")
+                            traceback.print_exc()
+                            
+                            print(f"\nFailed to fetch data for {end_date.date()}: {str(e)}")
+                            attempts += 1
+                            if attempts >= max_lookback:
+                                raise Exception(f"Could not fetch data for last {max_lookback} days")
+                            continue
                     
                     # Process each ticker's data
                     for ticker in ALL_TICKERS:
