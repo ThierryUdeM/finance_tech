@@ -29,38 +29,52 @@ from market_regime import classify_regime
 
 def fetch_latest_data(ticker, lookback_days=90):
     """Fetch latest 15-minute data for ticker"""
-    try:
-        # Calculate dates
-        end_date = datetime.now()
-        start_date = end_date - timedelta(days=lookback_days)
-        
-        # Download data
-        data = yf.download(
-            ticker,
-            start=start_date,
-            end=end_date,
-            interval='15m',
-            progress=False
-        )
-        
-        if data.empty:
-            print(f"Warning: No data retrieved for {ticker}")
-            return None
+    import time
+    
+    # Add retry logic for rate limiting
+    max_retries = 3
+    retry_delay = 5  # seconds
+    
+    for attempt in range(max_retries):
+        try:
+            if attempt > 0:
+                print(f"  Retry attempt {attempt + 1} for {ticker} data fetch...")
+                time.sleep(retry_delay * attempt)  # Exponential backoff
             
-        # Standardize column names
-        data.columns = [col.lower() for col in data.columns]
-        data.reset_index(inplace=True)
-        data.rename(columns={'Datetime': 'timestamp'}, inplace=True)
-        
-        # Add required calculations
-        data['returns'] = data['close'].pct_change()
-        data['vwap'] = (data['close'] * data['volume']).cumsum() / data['volume'].cumsum()
-        
-        return data
-        
-    except Exception as e:
-        print(f"Error fetching data for {ticker}: {str(e)}")
-        return None
+            # Calculate dates
+            end_date = datetime.now()
+            start_date = end_date - timedelta(days=lookback_days)
+            
+            # Download data
+            data = yf.download(
+                ticker,
+                start=start_date,
+                end=end_date,
+                interval='15m',
+                progress=False
+            )
+            
+            if data.empty:
+                print(f"Warning: No data retrieved for {ticker}")
+                return None
+                
+            # Standardize column names
+            data.columns = [col.lower() for col in data.columns]
+            data.reset_index(inplace=True)
+            data.rename(columns={'Datetime': 'timestamp'}, inplace=True)
+            
+            # Add required calculations
+            data['returns'] = data['close'].pct_change()
+            data['vwap'] = (data['close'] * data['volume']).cumsum() / data['volume'].cumsum()
+            
+            return data
+            
+        except Exception as e:
+            if "Rate limited" in str(e) and attempt < max_retries - 1:
+                print(f"  Rate limited on {ticker}, will retry...")
+                continue
+            print(f"Error fetching data for {ticker}: {str(e)}")
+            return None
 
 
 def calculate_entry_bands(data, signal, regime_data):
@@ -288,7 +302,13 @@ def main():
     signal_cards = []
     
     # Generate signals for each ticker
-    for ticker, model_func in models.items():
+    for i, (ticker, model_func) in enumerate(models.items()):
+        if i > 0:
+            # Add delay between tickers to avoid rate limiting
+            import time
+            print("\nWaiting 3 seconds before next ticker...")
+            time.sleep(3)
+            
         print(f"\nProcessing {ticker}...")
         
         # Fetch latest data

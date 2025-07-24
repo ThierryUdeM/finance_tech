@@ -108,28 +108,110 @@ jobs:
         # Import market regime
         from market_regime import classify_regime
         
-        def fetch_data(ticker, lookback_days=90):
-            """Fetch and prepare data for model"""
+        # Define all tickers
+        ALL_TICKERS = ['NVDA', 'TSLA', 'AAPL', 'MSFT']
+        
+        # Global cache for ticker data
+        TICKER_DATA_CACHE = {}
+        
+        def fetch_all_ticker_data(lookback_days=90):
+            """Fetch data for all tickers at once to minimize API calls"""
+            global TICKER_DATA_CACHE
+            
+            print("Fetching data for all tickers in one batch...")
             try:
                 end_date = datetime.now()
                 start_date = end_date - timedelta(days=lookback_days)
                 
-                data = yf.download(ticker, start=start_date, end=end_date, 
-                                 interval='15m', progress=False)
+                # Download all tickers at once
+                data = yf.download(
+                    tickers=' '.join(ALL_TICKERS),
+                    start=start_date,
+                    end=end_date,
+                    interval='15m',
+                    progress=True,
+                    group_by='ticker',
+                    threads=False  # Avoid concurrent requests
+                )
                 
-                if data.empty:
-                    return None
-                
-                data.columns = [col.lower() for col in data.columns]
-                data.reset_index(inplace=True)
-                data.rename(columns={'Datetime': 'timestamp'}, inplace=True)
-                data['returns'] = data['close'].pct_change()
-                data['vwap'] = (data['close'] * data['volume']).cumsum() / data['volume'].cumsum()
-                
-                return data
+                # Process each ticker's data
+                for ticker in ALL_TICKERS:
+                    try:
+                        if len(ALL_TICKERS) == 1:
+                            ticker_data = data
+                        else:
+                            ticker_data = data[ticker]
+                        
+                        if ticker_data.empty or ticker_data['Close'].isna().all():
+                            print(f"No data for {ticker}")
+                            continue
+                        
+                        # Clean and prepare data
+                        ticker_data = ticker_data.copy()
+                        ticker_data.columns = [col.lower() for col in ticker_data.columns]
+                        ticker_data = ticker_data.reset_index()
+                        ticker_data.rename(columns={'Date': 'timestamp', 'Datetime': 'timestamp'}, inplace=True)
+                        ticker_data['returns'] = ticker_data['close'].pct_change()
+                        ticker_data['vwap'] = (ticker_data['close'] * ticker_data['volume']).cumsum() / ticker_data['volume'].cumsum()
+                        
+                        TICKER_DATA_CACHE[ticker] = ticker_data
+                        print(f"Cached data for {ticker}: {len(ticker_data)} rows")
+                        
+                    except Exception as e:
+                        print(f"Error processing {ticker}: {str(e)}")
+                        
             except Exception as e:
-                print(f"Error fetching {ticker}: {str(e)}")
-                return None
+                print(f"Error in bulk download: {str(e)}")
+                # Fall back to individual fetching
+                import time
+                for i, ticker in enumerate(ALL_TICKERS):
+                    if i > 0:
+                        time.sleep(3)
+                    fetch_data(ticker, lookback_days)
+        
+        def fetch_data(ticker, lookback_days=90):
+            """Fetch and prepare data for model"""
+            global TICKER_DATA_CACHE
+            import time
+            
+            # Check cache first
+            if ticker in TICKER_DATA_CACHE:
+                print(f"Using cached data for {ticker}")
+                return TICKER_DATA_CACHE[ticker]
+            
+            # Add retry logic for rate limiting
+            max_retries = 3
+            retry_delay = 5  # seconds
+            
+            for attempt in range(max_retries):
+                try:
+                    if attempt > 0:
+                        print(f"Retry attempt {attempt + 1} for {ticker}")
+                        time.sleep(retry_delay * attempt)  # Exponential backoff
+                    
+                    end_date = datetime.now()
+                    start_date = end_date - timedelta(days=lookback_days)
+                    
+                    data = yf.download(ticker, start=start_date, end=end_date, 
+                                     interval='15m', progress=False)
+                    
+                    if data.empty:
+                        return None
+                    
+                    data.columns = [col.lower() for col in data.columns]
+                    data.reset_index(inplace=True)
+                    data.rename(columns={'Datetime': 'timestamp'}, inplace=True)
+                    data['returns'] = data['close'].pct_change()
+                    data['vwap'] = (data['close'] * data['volume']).cumsum() / data['volume'].cumsum()
+                    
+                    # Cache the data
+                    TICKER_DATA_CACHE[ticker] = data
+                    return data
+                except Exception as e:
+                    if "Rate limited" in str(e) and attempt < max_retries - 1:
+                        continue
+                    print(f"Error fetching {ticker}: {str(e)}")
+                    return None
         
         def run_model_for_ticker(ticker, model_func):
             """Run ensemble model and extract detailed outputs"""
@@ -191,6 +273,9 @@ jobs:
             'AAPL': ensemble_aapl_v2,
             'MSFT': ensemble_msft_v2
         }
+        
+        # Fetch all data upfront
+        fetch_all_ticker_data()
         
         # Run all models
         all_model_outputs = []
