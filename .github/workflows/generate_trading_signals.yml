@@ -1,0 +1,199 @@
+name: Generate Trading Signals
+
+on:
+  schedule:
+    # Run every 15 minutes during market hours (9:30 AM - 4:00 PM ET, Monday-Friday)
+    # GitHub Actions uses UTC time, so we need to adjust
+    # 9:30 AM ET = 1:30 PM UTC (during EDT) or 2:30 PM UTC (during EST)
+    - cron: '30,45 13-20 * * 1-5'  # Covers both EDT and EST periods
+    - cron: '0,15 14-20 * * 1-5'
+  
+  workflow_dispatch:  # Allow manual trigger for testing
+
+jobs:
+  check-market-hours:
+    runs-on: ubuntu-latest
+    outputs:
+      is_market_open: ${{ steps.check.outputs.is_open }}
+    
+    steps:
+    - name: Check if market is open
+      id: check
+      run: |
+        # Get current time in ET
+        CURRENT_HOUR=$(TZ=America/New_York date +%H)
+        CURRENT_MIN=$(TZ=America/New_York date +%M)
+        CURRENT_DAY=$(TZ=America/New_York date +%u)
+        
+        # Check if weekend (6=Saturday, 7=Sunday)
+        if [ $CURRENT_DAY -ge 6 ]; then
+          echo "is_open=false" >> $GITHUB_OUTPUT
+          echo "Market closed - Weekend"
+          exit 0
+        fi
+        
+        # Convert to minutes since midnight
+        CURRENT_TOTAL_MIN=$((CURRENT_HOUR * 60 + CURRENT_MIN))
+        MARKET_OPEN=$((9 * 60 + 30))   # 9:30 AM
+        MARKET_CLOSE=$((16 * 60))      # 4:00 PM
+        
+        # Check market hours
+        if [ $CURRENT_TOTAL_MIN -ge $MARKET_OPEN ] && [ $CURRENT_TOTAL_MIN -le $MARKET_CLOSE ]; then
+          echo "is_open=true" >> $GITHUB_OUTPUT
+          echo "Market is open"
+        else
+          echo "is_open=false" >> $GITHUB_OUTPUT
+          echo "Market closed - Outside hours"
+        fi
+
+  generate-signals:
+    needs: check-market-hours
+    if: needs.check-market-hours.outputs.is_market_open == 'true' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v3
+    
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.10'
+    
+    - name: Cache pip packages
+      uses: actions/cache@v3
+      with:
+        path: ~/.cache/pip
+        key: ${{ runner.os }}-pip-${{ hashFiles('requirements.txt') }}
+        restore-keys: |
+          ${{ runner.os }}-pip-
+    
+    - name: Install TA-Lib dependencies
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y build-essential
+        # Download and install TA-Lib
+        wget http://prdownloads.sourceforge.net/ta-lib/ta-lib-0.4.0-src.tar.gz
+        tar -xzf ta-lib-0.4.0-src.tar.gz
+        cd ta-lib
+        ./configure --prefix=/usr
+        make
+        sudo make install
+        cd ..
+    
+    - name: Install Python dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install pandas numpy yfinance scipy scikit-learn
+        pip install TA-Lib
+    
+    - name: Generate trading signals
+      run: |
+        cd github_ready
+        python generate_trading_signals.py
+    
+    - name: Upload signals to Azure
+      env:
+        AZURE_STORAGE_CONNECTION_STRING: ${{ secrets.AZURE_STORAGE_CONNECTION_STRING }}
+      run: |
+        # Install Azure CLI
+        pip install azure-storage-blob
+        
+        # Create upload script
+        cat > upload_signals.py << 'EOF'
+        import os
+        from azure.storage.blob import BlobServiceClient
+        from datetime import datetime
+        
+        # Get connection string
+        connection_string = os.environ.get('AZURE_STORAGE_CONNECTION_STRING')
+        if not connection_string:
+            print("Error: AZURE_STORAGE_CONNECTION_STRING not set")
+            exit(1)
+        
+        # Create blob service client
+        blob_service_client = BlobServiceClient.from_connection_string(connection_string)
+        
+        # Container name
+        container_name = "trading-signals"
+        
+        # Files to upload
+        files = [
+            "trading_signals_latest.json",
+            "actionable_summary_latest.json"
+        ]
+        
+        for file_name in files:
+            if os.path.exists(file_name):
+                # Also save with timestamp
+                timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+                blob_name_timestamp = f"history/{file_name.replace('_latest', f'_{timestamp}')}"
+                
+                # Upload current version
+                blob_client = blob_service_client.get_blob_client(
+                    container=container_name, 
+                    blob=file_name
+                )
+                
+                with open(file_name, 'rb') as data:
+                    blob_client.upload_blob(data, overwrite=True)
+                    print(f"Uploaded {file_name}")
+                
+                # Upload timestamped version
+                blob_client_ts = blob_service_client.get_blob_client(
+                    container=container_name,
+                    blob=blob_name_timestamp
+                )
+                
+                with open(file_name, 'rb') as data:
+                    blob_client_ts.upload_blob(data, overwrite=True)
+                    print(f"Uploaded {blob_name_timestamp}")
+        
+        print("Signal upload complete!")
+        EOF
+        
+        cd github_ready
+        python upload_signals.py
+    
+    - name: Create summary comment
+      if: github.event_name == 'workflow_dispatch'
+      uses: actions/github-script@v6
+      with:
+        script: |
+          const fs = require('fs');
+          
+          // Read summary file
+          const summaryPath = 'github_ready/actionable_summary_latest.json';
+          if (fs.existsSync(summaryPath)) {
+            const summary = JSON.parse(fs.readFileSync(summaryPath, 'utf8'));
+            
+            let comment = '## Trading Signals Generated Successfully! 📊\n\n';
+            comment += `**Generated at:** ${summary.generated_at}\n`;
+            comment += `**Market Status:** ${summary.market_status}\n\n`;
+            comment += '### Signal Summary\n';
+            comment += `- Total Signals: ${summary.total_signals}\n`;
+            comment += `- Buy Signals: ${summary.buy_signals}\n`;
+            comment += `- Sell Signals: ${summary.sell_signals}\n`;
+            comment += `- High Confidence: ${summary.high_confidence}\n\n`;
+            
+            if (summary.top_opportunities.length > 0) {
+              comment += '### Top Opportunities\n\n';
+              summary.top_opportunities.forEach((opp, i) => {
+                comment += `${i + 1}. **${opp.ticker}** - ${opp.action}\n`;
+                comment += `   - Confidence: ${opp.confidence}\n`;
+                comment += `   - Entry: ${opp.entry_range}\n`;
+                comment += `   - Stop: ${opp.stop}\n`;
+                comment += `   - Target (1h): ${opp.target_1h} (RR: ${opp.risk_reward_1h})\n\n`;
+              });
+            }
+            
+            // Create issue comment if manually triggered
+            if (context.eventName === 'workflow_dispatch') {
+              github.rest.issues.create({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                title: `Trading Signals - ${new Date().toLocaleDateString()}`,
+                body: comment
+              });
+            }
+          }

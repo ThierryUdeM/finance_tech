@@ -1,0 +1,418 @@
+name: Complete Trading Signal Pipeline
+
+on:
+  schedule:
+    # Run every 15 minutes during market hours (9:30 AM - 4:00 PM ET, Monday-Friday)
+    # GitHub Actions uses UTC time, so we need to adjust
+    # 9:30 AM ET = 1:30 PM UTC (during EDT) or 2:30 PM UTC (during EST)
+    - cron: '30,45 13-20 * * 1-5'  # Covers both EDT and EST periods
+    - cron: '0,15 14-20 * * 1-5'
+  
+  workflow_dispatch:  # Allow manual trigger for testing
+
+jobs:
+  check-market-hours:
+    runs-on: ubuntu-latest
+    outputs:
+      is_market_open: ${{ steps.check.outputs.is_open }}
+    
+    steps:
+    - name: Check if market is open
+      id: check
+      run: |
+        # Get current time in ET
+        CURRENT_HOUR=$(TZ=America/New_York date +%H)
+        CURRENT_MIN=$(TZ=America/New_York date +%M)
+        CURRENT_DAY=$(TZ=America/New_York date +%u)
+        
+        # Check if weekend (6=Saturday, 7=Sunday)
+        if [ $CURRENT_DAY -ge 6 ]; then
+          echo "is_open=false" >> $GITHUB_OUTPUT
+          echo "Market closed - Weekend"
+          exit 0
+        fi
+        
+        # Convert to minutes since midnight
+        CURRENT_TOTAL_MIN=$((CURRENT_HOUR * 60 + CURRENT_MIN))
+        MARKET_OPEN=$((9 * 60 + 30))   # 9:30 AM
+        MARKET_CLOSE=$((16 * 60))      # 4:00 PM
+        
+        # Check market hours
+        if [ $CURRENT_TOTAL_MIN -ge $MARKET_OPEN ] && [ $CURRENT_TOTAL_MIN -le $MARKET_CLOSE ]; then
+          echo "is_open=true" >> $GITHUB_OUTPUT
+          echo "Market is open"
+        else
+          echo "is_open=false" >> $GITHUB_OUTPUT
+          echo "Market closed - Outside hours"
+        fi
+
+  generate-all-signals:
+    needs: check-market-hours
+    if: needs.check-market-hours.outputs.is_market_open == 'true' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v3
+    
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.10'
+    
+    - name: Cache pip packages
+      uses: actions/cache@v3
+      with:
+        path: ~/.cache/pip
+        key: ${{ runner.os }}-pip-${{ hashFiles('requirements.txt') }}
+        restore-keys: |
+          ${{ runner.os }}-pip-
+    
+    - name: Install TA-Lib dependencies
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y build-essential
+        # Download and install TA-Lib
+        wget http://prdownloads.sourceforge.net/ta-lib/ta-lib-0.4.0-src.tar.gz
+        tar -xzf ta-lib-0.4.0-src.tar.gz
+        cd ta-lib
+        ./configure --prefix=/usr
+        make
+        sudo make install
+        cd ..
+    
+    - name: Install Python dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install pandas numpy yfinance scipy scikit-learn
+        pip install TA-Lib
+        pip install azure-storage-blob
+    
+    - name: Run ensemble models for all tickers
+      run: |
+        # Create a script to run models individually and save outputs
+        cat > run_ensemble_models.py << 'EOF'
+        import sys
+        import os
+        import json
+        import pandas as pd
+        import numpy as np
+        from datetime import datetime, timedelta
+        import yfinance as yf
+        import warnings
+        warnings.filterwarnings('ignore')
+        
+        # Add parent directory to path
+        sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+        
+        # Import ensemble models
+        from walk_forward_tests.model.hybrid_momentum_technical.ensemble_nvda import ensemble_nvda
+        from walk_forward_tests.model.hybrid_momentum_technical.ensemble_tsla import ensemble_tsla
+        from walk_forward_tests.model.hybrid_momentum_technical.ensemble_aapl_v2 import ensemble_aapl_v2
+        from walk_forward_tests.model.hybrid_momentum_technical.ensemble_msft_v2 import ensemble_msft_v2
+        
+        # Import market regime
+        from walk_forward_tests.model.hybrid_momentum_technical.market_regime import classify_regime
+        
+        def fetch_data(ticker, lookback_days=90):
+            """Fetch and prepare data for model"""
+            try:
+                end_date = datetime.now()
+                start_date = end_date - timedelta(days=lookback_days)
+                
+                data = yf.download(ticker, start=start_date, end=end_date, 
+                                 interval='15m', progress=False)
+                
+                if data.empty:
+                    return None
+                
+                data.columns = [col.lower() for col in data.columns]
+                data.reset_index(inplace=True)
+                data.rename(columns={'Datetime': 'timestamp'}, inplace=True)
+                data['returns'] = data['close'].pct_change()
+                data['vwap'] = (data['close'] * data['volume']).cumsum() / data['volume'].cumsum()
+                
+                return data
+            except Exception as e:
+                print(f"Error fetching {ticker}: {str(e)}")
+                return None
+        
+        def run_model_for_ticker(ticker, model_func):
+            """Run ensemble model and extract detailed outputs"""
+            print(f"Running model for {ticker}...")
+            
+            data = fetch_data(ticker)
+            if data is None or len(data) < 1600:
+                return None
+            
+            # Split data
+            train_size = 60 * 26  # 60 days
+            train_data = data.iloc[-train_size-26:-26].copy()
+            test_data = data.iloc[-26:].copy()
+            
+            try:
+                # Run model
+                signals = model_func(train_data, test_data)
+                
+                # Get latest values
+                if 'signal' in signals.columns:
+                    signal = int(signals['signal'].iloc[-1])
+                else:
+                    signal = int(signals.iloc[-1, 0])
+                
+                position_size = signals['position_size'].iloc[-1] if 'position_size' in signals.columns else 1.0
+                
+                # Calculate regime
+                regime_data = classify_regime(test_data)
+                
+                # Extract model internals if available
+                model_details = {
+                    'ticker': ticker,
+                    'timestamp': datetime.now().isoformat(),
+                    'signal': signal,
+                    'position_size': float(position_size),
+                    'latest_price': float(test_data['close'].iloc[-1]),
+                    'vwap': float(test_data['vwap'].iloc[-1]),
+                    'volume_ratio': float(test_data['volume'].iloc[-1] / test_data['volume'].mean()),
+                    'regime': {
+                        'label': regime_data['regime_label'].iloc[-1],
+                        'score': float(regime_data['regime_score'].iloc[-1]),
+                        'adx': float(regime_data['adx'].iloc[-1]),
+                        'hurst': float(regime_data['hurst'].iloc[-1])
+                    },
+                    'data_points': len(test_data),
+                    'model_type': 'V1' if ticker in ['NVDA', 'TSLA'] else 'V2'
+                }
+                
+                return model_details
+                
+            except Exception as e:
+                print(f"Error running model for {ticker}: {str(e)}")
+                return None
+        
+        # Model configurations
+        models = {
+            'NVDA': ensemble_nvda,
+            'TSLA': ensemble_tsla,
+            'AAPL': ensemble_aapl_v2,
+            'MSFT': ensemble_msft_v2
+        }
+        
+        # Run all models
+        all_model_outputs = []
+        
+        for ticker, model_func in models.items():
+            output = run_model_for_ticker(ticker, model_func)
+            if output:
+                all_model_outputs.append(output)
+        
+        # Save model outputs
+        model_output = {
+            'generated_at': datetime.now().isoformat(),
+            'models_run': len(all_model_outputs),
+            'model_outputs': all_model_outputs
+        }
+        
+        with open('ensemble_model_outputs.json', 'w') as f:
+            json.dump(model_output, f, indent=2)
+        
+        print(f"\nModel outputs saved. Total models run: {len(all_model_outputs)}")
+        EOF
+        
+        python run_ensemble_models.py
+    
+    - name: Generate trading signals
+      run: |
+        cd github_ready
+        python generate_trading_signals.py
+        cd ..
+    
+    - name: Generate position sizing report
+      run: |
+        cd github_ready
+        python position_sizing_calculator.py
+        cd ..
+    
+    - name: Upload all outputs to Azure
+      env:
+        AZURE_STORAGE_CONNECTION_STRING: ${{ secrets.AZURE_STORAGE_CONNECTION_STRING }}
+      run: |
+        # Create comprehensive upload script
+        cat > upload_all_outputs.py << 'EOF'
+        import os
+        import json
+        from azure.storage.blob import BlobServiceClient
+        from datetime import datetime
+        
+        # Get connection string
+        connection_string = os.environ.get('AZURE_STORAGE_CONNECTION_STRING')
+        if not connection_string:
+            print("Error: AZURE_STORAGE_CONNECTION_STRING not set")
+            exit(1)
+        
+        # Create blob service client
+        blob_service_client = BlobServiceClient.from_connection_string(connection_string)
+        container_name = "trading-signals"
+        
+        # Create combined output
+        timestamp = datetime.now()
+        
+        # Load all outputs
+        outputs = {}
+        
+        # Model outputs
+        if os.path.exists('ensemble_model_outputs.json'):
+            with open('ensemble_model_outputs.json', 'r') as f:
+                outputs['model_outputs'] = json.load(f)
+        
+        # Trading signals
+        if os.path.exists('github_ready/trading_signals_latest.json'):
+            with open('github_ready/trading_signals_latest.json', 'r') as f:
+                outputs['trading_signals'] = json.load(f)
+        
+        # Signal summary
+        if os.path.exists('github_ready/actionable_summary_latest.json'):
+            with open('github_ready/actionable_summary_latest.json', 'r') as f:
+                outputs['signal_summary'] = json.load(f)
+        
+        # Position sizing
+        if os.path.exists('github_ready/position_sizing_report.json'):
+            with open('github_ready/position_sizing_report.json', 'r') as f:
+                outputs['position_sizing'] = json.load(f)
+        
+        # Create master output file
+        master_output = {
+            'pipeline_run_time': timestamp.isoformat(),
+            'outputs': outputs
+        }
+        
+        # Files to upload
+        files_to_upload = [
+            ('ensemble_model_outputs.json', 'model_outputs/latest.json'),
+            ('github_ready/trading_signals_latest.json', 'signals/latest.json'),
+            ('github_ready/actionable_summary_latest.json', 'summary/latest.json'),
+            ('github_ready/position_sizing_report.json', 'sizing/latest.json')
+        ]
+        
+        # Upload individual files
+        for local_file, blob_name in files_to_upload:
+            if os.path.exists(local_file):
+                # Upload latest version
+                blob_client = blob_service_client.get_blob_client(
+                    container=container_name, 
+                    blob=blob_name
+                )
+                
+                with open(local_file, 'rb') as data:
+                    blob_client.upload_blob(data, overwrite=True)
+                    print(f"Uploaded {blob_name}")
+                
+                # Also save timestamped version
+                timestamp_str = timestamp.strftime("%Y%m%d_%H%M%S")
+                history_blob = blob_name.replace('latest.json', f'{timestamp_str}.json')
+                history_blob = f"history/{history_blob}"
+                
+                blob_client_history = blob_service_client.get_blob_client(
+                    container=container_name,
+                    blob=history_blob
+                )
+                
+                with open(local_file, 'rb') as data:
+                    blob_client_history.upload_blob(data, overwrite=True)
+                    print(f"Uploaded {history_blob}")
+        
+        # Save and upload master output
+        with open('master_output.json', 'w') as f:
+            json.dump(master_output, f, indent=2)
+        
+        # Upload master output
+        master_blob = blob_service_client.get_blob_client(
+            container=container_name,
+            blob='master/latest.json'
+        )
+        
+        with open('master_output.json', 'rb') as data:
+            master_blob.upload_blob(data, overwrite=True)
+            print("Uploaded master output")
+        
+        # Also save timestamped master
+        master_history = f"history/master/{timestamp.strftime('%Y%m%d_%H%M%S')}.json"
+        master_history_blob = blob_service_client.get_blob_client(
+            container=container_name,
+            blob=master_history
+        )
+        
+        with open('master_output.json', 'rb') as data:
+            master_history_blob.upload_blob(data, overwrite=True)
+            print(f"Uploaded {master_history}")
+        
+        print("\nAll uploads complete!")
+        print(f"Total files uploaded: {len(files_to_upload) * 2 + 2}")
+        EOF
+        
+        python upload_all_outputs.py
+    
+    - name: Create summary report
+      if: github.event_name == 'workflow_dispatch'
+      uses: actions/github-script@v6
+      with:
+        script: |
+          const fs = require('fs');
+          
+          let comment = '## 📊 Trading Signal Pipeline Complete!\n\n';
+          comment += `**Run Time:** ${new Date().toISOString()}\n\n`;
+          
+          // Read model outputs
+          if (fs.existsSync('ensemble_model_outputs.json')) {
+            const modelOutputs = JSON.parse(fs.readFileSync('ensemble_model_outputs.json', 'utf8'));
+            comment += '### Model Outputs\n';
+            comment += `Models Run: ${modelOutputs.models_run}\n\n`;
+            
+            modelOutputs.model_outputs.forEach(m => {
+              const signal = m.signal === 1 ? '🟢 BUY' : m.signal === -1 ? '🔴 SELL' : '⚪ NEUTRAL';
+              comment += `**${m.ticker}**: ${signal} (Confidence: ${(m.position_size * 100).toFixed(1)}%)\n`;
+              comment += `- Price: $${m.latest_price.toFixed(2)} | VWAP: $${m.vwap.toFixed(2)}\n`;
+              comment += `- Regime: ${m.regime.label} (${m.regime.score.toFixed(2)})\n\n`;
+            });
+          }
+          
+          // Read signal summary
+          if (fs.existsSync('github_ready/actionable_summary_latest.json')) {
+            const summary = JSON.parse(fs.readFileSync('github_ready/actionable_summary_latest.json', 'utf8'));
+            
+            comment += '### Signal Summary\n';
+            comment += `- Total Signals: ${summary.total_signals}\n`;
+            comment += `- Buy Signals: ${summary.buy_signals}\n`;
+            comment += `- Sell Signals: ${summary.sell_signals}\n`;
+            comment += `- High Confidence: ${summary.high_confidence}\n\n`;
+            
+            if (summary.top_opportunities.length > 0) {
+              comment += '### Top Opportunities\n\n';
+              summary.top_opportunities.forEach((opp, i) => {
+                comment += `${i + 1}. **${opp.ticker}** - ${opp.action}\n`;
+                comment += `   - Entry: ${opp.entry_range} | Stop: ${opp.stop}\n`;
+                comment += `   - Target (1h): ${opp.target_1h} (RR: ${opp.risk_reward_1h})\n\n`;
+              });
+            }
+          }
+          
+          comment += '\n### Azure Storage Structure\n';
+          comment += '```\n';
+          comment += 'trading-signals/\n';
+          comment += '├── master/latest.json          # Combined output\n';
+          comment += '├── model_outputs/latest.json   # Raw model outputs\n';
+          comment += '├── signals/latest.json         # Trading signals\n';
+          comment += '├── summary/latest.json         # Actionable summary\n';
+          comment += '└── sizing/latest.json          # Position sizing\n';
+          comment += '```';
+          
+          // Create issue if manually triggered
+          if (context.eventName === 'workflow_dispatch') {
+            github.rest.issues.create({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              title: `Trading Signals - ${new Date().toLocaleDateString()}`,
+              body: comment,
+              labels: ['trading-signals', 'automated']
+            });
+          }

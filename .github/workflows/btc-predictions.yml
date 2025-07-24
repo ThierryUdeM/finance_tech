@@ -30,7 +30,43 @@ jobs:
     - name: Install dependencies
       run: |
         python -m pip install --upgrade pip
-        pip install -r ChartScanAI_Shiny/requirements.txt
+        pip install yfinance mplfinance pandas
+        pip install ultralytics
+        pip install azure-storage-blob
+        pip install python-dotenv
+    
+    - name: Download YOLO weights
+      env:
+        STORAGE_ACCOUNT_NAME: ${{ secrets.STORAGE_ACCOUNT_NAME }}
+        ACCESS_KEY: ${{ secrets.ACCESS_KEY }}
+        CONTAINER_NAME: ${{ secrets.CONTAINER_NAME }}
+      run: |
+        # Download weights if not in repo
+        if [ ! -f "ChartScanAI/weights/custom_yolov8.pt" ]; then
+          echo "Downloading YOLO weights from Azure..."
+          mkdir -p ChartScanAI/weights
+          
+          # Install Azure CLI tool
+          pip install azure-storage-blob
+          
+          # Download weights using Python
+          python -c "
+from azure.storage.blob import BlobServiceClient
+import os
+
+storage_account = os.environ['STORAGE_ACCOUNT_NAME']
+key = os.environ['ACCESS_KEY']
+container = os.environ['CONTAINER_NAME']
+
+connection_string = f'DefaultEndpointsProtocol=https;AccountName={storage_account};AccountKey={key};EndpointSuffix=core.windows.net'
+blob_service = BlobServiceClient.from_connection_string(connection_string)
+blob_client = blob_service.get_blob_client(container=container, blob='weights/custom_yolov8.pt')
+
+with open('ChartScanAI/weights/custom_yolov8.pt', 'wb') as f:
+    f.write(blob_client.download_blob().readall())
+print('Weights downloaded successfully!')
+"
+        fi
     
     - name: Run predictions and evaluation
       env:
@@ -48,11 +84,19 @@ jobs:
         echo "" >> $GITHUB_STEP_SUMMARY
         echo "**Time**: $(date -u '+%Y-%m-%d %H:%M:%S') UTC" >> $GITHUB_STEP_SUMMARY
         echo "" >> $GITHUB_STEP_SUMMARY
-        echo "Prediction completed - check Azure Storage for results" >> $GITHUB_STEP_SUMMARY
+        
+        if [ -n "${{ steps.predict.outputs.recommendation }}" ]; then
+          echo "**Recommendation**: ${{ steps.predict.outputs.recommendation }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Buy Signals**: ${{ steps.predict.outputs.buy_signals }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Sell Signals**: ${{ steps.predict.outputs.sell_signals }}" >> $GITHUB_STEP_SUMMARY
+        else
+          echo "No prediction results available" >> $GITHUB_STEP_SUMMARY
+        fi
 
-  weekly-report:
+  performance-report:
     runs-on: ubuntu-latest
     if: github.event.schedule == '0 0 * * 0'  # Run on Sundays at midnight
+    needs: predict
     
     steps:
     - name: Checkout repository
@@ -75,4 +119,8 @@ jobs:
         CONTAINER_NAME: ${{ secrets.CONTAINER_NAME }}
       run: |
         cd ChartScanAI_Shiny
-        python -c "from btc_predictor_azure import BTCPredictor; BTCPredictor().generate_performance_report(days=7)"
+        python -c "
+        from btc_predictor_azure import BTCPredictor
+        predictor = BTCPredictor()
+        predictor.generate_performance_report(days=7)
+        "
