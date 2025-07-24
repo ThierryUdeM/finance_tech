@@ -1,0 +1,236 @@
+MOMENTUM SHAPEMATCHING MODELS - COMPREHENSIVE TECHNICAL SUMMARY
+=============================================================
+
+Overview:
+---------
+The momentum shapematching models combine pattern recognition with momentum indicators to generate trading signals.
+These models use historical pattern libraries and momentum-based features to predict future price movements.
+
+Model Architecture:
+------------------
+- Type: Hybrid pattern matching + momentum systems
+- Design: Machine learning-inspired pattern libraries with rule-based momentum signals
+- Philosophy: Combines historical pattern similarity with real-time momentum indicators
+
+Common Framework:
+----------------
+- Pattern library construction using normalized return patterns
+- Euclidean distance-based pattern matching
+- Weighted signal combination from multiple sources
+- Daily signal limits and confidence thresholds
+
+=============================================================
+TICKER-SPECIFIC MODEL DETAILS
+=============================================================
+
+1. AAPL IMPROVED MODEL (aapl_improved.py)
+-----------------------------------------
+Strategy Type: Mean Reversion with Volume Confirmation
+Architecture: Rule-based multi-factor filtering system
+
+INPUT FEATURES:
+- Price data: close, high, low, volume
+- Derived: returns, SMAs (5,10,20,50), distance from SMA20, volatility, volume ratio, ATR
+
+TECHNICAL INDICATORS:
+- RSI (14-period)
+- Bollinger Bands (20-period, 2 std)
+- ATR (14-period)
+- Volatility percentile (100-period)
+- Trend alignment indicator
+
+PATTERN RECOGNITION:
+- Mean reversion edges at 1%, 1.5%, 2%, 2.5% from SMA20
+- Volume spike detection (>1.5x average)
+- Bollinger Band squeeze detection (<1% width)
+
+SIGNAL GENERATION:
+1. High-confidence mean reversion (2%+ from SMA)
+   - Long: Price <-2% from SMA20, RSI <35, not trending down
+   - Short: Price >2% from SMA20, RSI >65, not trending up
+2. Volume spike reversal (50bps move + volume spike)
+3. BB squeeze breakout fade
+
+RISK MANAGEMENT:
+- Max 1 signal per day
+- Skip after 2 consecutive losses
+- Volatility filter (>1.5x 50-period average)
+- Minimum 0.5 confidence score
+
+AAPL-SPECIFIC PARAMETERS:
+- 2% mean reversion threshold
+- Trading hours: 14, 15, 20 (2pm, 3pm, 8pm)
+- Low volatility regime preference (<0.7 percentile)
+- Strict daily limit (1 signal)
+
+OUTPUT: DataFrame with signals (-1: short, 0: hold, 1: long)
+
+=============================================================
+
+2. MSFT IMPROVED MODEL (msft_improved.py)
+-----------------------------------------
+Strategy Type: Extreme Patience Mean Reversion
+Architecture: Multi-factor rule-based with stringent filters
+
+INPUT FEATURES:
+- Price data: close, high, low, volume
+- Extended: SMAs (10,20,50,100), distance metrics, range metrics, VWAP approx
+
+TECHNICAL INDICATORS:
+- RSI (14-period)
+- CCI (20-period)
+- Multiple Bollinger Bands (2 & 3 std)
+- Volatility rank (252-period)
+- Range position indicator
+- VWAP approximation (20-period)
+
+PATTERN RECOGNITION:
+- Extreme move analysis (>1.5% from SMA20)
+- Range breakout detection
+- Multi-timeframe alignment
+- 3-sigma event detection
+
+SIGNAL GENERATION:
+1. Extreme distance from mean (2%+)
+   - Requires 4/5 conditions met
+   - Multi-timeframe SMA alignment required
+2. 3-sigma Bollinger Band touch
+   - High volatility regime only
+3. Range breakout fade
+   - Range >3%, at 95th/5th percentile
+
+RISK MANAGEMENT:
+- Max 1 per day, 3 per week
+- Minimum 0.7 confidence
+- Volatility spike avoidance (>2x average)
+- Multiple confirmation requirements
+
+MSFT-SPECIFIC PARAMETERS:
+- 1.5% extreme move threshold
+- 50-period volume MA (vs 20)
+- High volatility regime preference
+- Weekly limits in addition to daily
+- Focus on 3-sigma statistical extremes
+
+OUTPUT: DataFrame with binary signals and detailed statistics
+
+=============================================================
+
+3. NVDA V1 MODEL (nvda_v1.py)
+-----------------------------
+Strategy Type: Hybrid Momentum + Pattern Matching
+Architecture: ML-inspired pattern library with momentum signals
+
+INPUT FEATURES:
+- Price data: close, high, low, volume
+- Momentum: 4-period (1hr), 12-period (3hr)
+- Pattern: 12-bar return patterns, volatility normalized
+
+TECHNICAL INDICATORS:
+- ATR (14-period)
+- Volatility (20-period rolling std)
+- Volume ratio (current/20-period MA)
+- Multi-timeframe momentum indicators
+
+PATTERN RECOGNITION:
+- Pattern Library:
+  - 12-bar normalized return patterns
+  - Associated with future 1-hour returns
+  - Includes momentum and volume metadata
+- Pattern Matching:
+  - Euclidean distance calculation
+  - Top 20 nearest patterns
+  - Inverse distance weighting
+
+SIGNAL GENERATION:
+1. Shape-based return (weight: 2.0)
+   - Expected return from similar patterns
+   - Minimum 5bps threshold
+2. Momentum signal (weight: 3.0)
+   - 10bps minimum threshold
+3. Volume confirmation (1.2x multiplier)
+
+RISK MANAGEMENT:
+- Top 3 signals per day
+- Minimum 0.5 strength
+- Fallback to pure momentum
+- Daily signal grouping
+
+NVDA-SPECIFIC PARAMETERS:
+- 12-bar pattern window (3 hours)
+- Higher momentum weight (3.0 vs 2.0)
+- 1-hour prediction horizon
+- Top 3 daily signals allowed
+
+OUTPUT: Signal DataFrame with fallback capability
+
+=============================================================
+
+4. TSLA V1 MODEL (v1_TSLA.py)
+------------------------------
+Strategy Type: Fast-Acting Momentum + Pattern Matching
+Architecture: Modified pattern library for high volatility
+
+INPUT FEATURES:
+- Price data with volatility focus
+- Extreme move detection (>1% in 15min)
+- Range percentage
+- Multiple momentum timeframes (2,4,8 periods)
+
+TECHNICAL INDICATORS:
+- ATR (10-period - faster)
+- Volatility (15-period - shorter)
+- Volume ratio (15-period MA)
+- Range percentage (high-low/close)
+- Extreme move binary indicator
+
+PATTERN RECOGNITION:
+- 8-bar pattern window (2 hours)
+- 30-min to 1-hour forward returns
+- Extreme move metadata included
+- Range-based pattern features
+- Top 15 patterns (fewer than NVDA)
+
+SIGNAL GENERATION:
+1. Shape-based return (weight: 1.5)
+   - Higher threshold (10bps)
+2. Short momentum (weight: 3.5)
+   - 2-period momentum (30 min)
+   - 20bps minimum threshold
+3. Extreme move fade (weight: 2.0)
+4. Range-based adjustment (1.3x for high range)
+
+RISK MANAGEMENT:
+- Higher minimum strength (0.8)
+- Top 4 signals per day
+- Volume-based scaling:
+  - 1.5x boost for volume >2x average
+  - 0.5x reduction for volume <0.5x average
+
+TSLA-SPECIFIC PARAMETERS:
+- Shorter timeframes (2,4,8 periods)
+- Extreme move detection/fading
+- Higher signal threshold (0.8)
+- More daily signals (4)
+- Range-based signal boosting
+- Critical volume confirmation
+
+OUTPUT: Signal DataFrame with extreme move tracking
+
+=============================================================
+
+COMPARISON SUMMARY
+=============================================================
+
+| Feature         | AAPL    | MSFT      | NVDA      | TSLA        |
+|-----------------|---------|-----------|-----------|-------------|
+| Strategy        | Mean Rev| Ext Mean  | Mom+Pat   | Fast Mom+Pat|
+| Daily Limit     | 1       | 1 (3/wk)  | 3         | 4           |
+| Key Indicator   | SMA Dist| Multi Conf| Pattern   | Short Mom   |
+| Key Threshold   | 2% SMA  | 2% + 4/5  | 0.5 str   | 0.8 str     |
+| Time Horizon    | 1 hour  | 1 hour    | 1 hour    | 30min-1hr   |
+| Special Feature | Hr filt | 3-sigma   | Pat lib   | Ext move    |
+
+Each model is carefully adapted to its ticker's characteristics:
+- AAPL/MSFT: Patient mean reversion strategies
+- NVDA/TSLA: Faster momentum and pattern-based approaches
