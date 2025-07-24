@@ -107,6 +107,9 @@ jobs:
         ensemble_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'ensemble')
         sys.path.insert(0, ensemble_path)
         
+        # Print yfinance version for debugging
+        print(f"yfinance version: {yf.__version__}")
+        
         # Import ensemble models directly
         from ensemble_nvda import ensemble_nvda
         from ensemble_tsla import ensemble_tsla
@@ -164,15 +167,22 @@ jobs:
                 data = json.loads(blob_data)
                 
                 print(f"Azure data type for {ticker}: {type(data)}")
-                if isinstance(data, list) and len(data) > 0:
-                    print(f"First record keys: {list(data[0].keys()) if isinstance(data[0], dict) else 'Not a dict'}")
                 
-                # Convert to DataFrame - handle both list and dict formats
-                if isinstance(data, list):
+                # Handle different data structures
+                if isinstance(data, dict):
+                    print(f"Dict keys: {list(data.keys())}")
+                    # Check if data is nested in a 'data' key
+                    if 'data' in data and isinstance(data['data'], list):
+                        print(f"Found 'data' key with {len(data['data'])} records")
+                        df = pd.DataFrame(data['data'])
+                    else:
+                        # Try to create DataFrame from dict directly
+                        df = pd.DataFrame(data)
+                elif isinstance(data, list):
+                    print(f"List with {len(data)} records")
                     df = pd.DataFrame(data)
                 else:
-                    # If data is a dict, it might have nested structure
-                    df = pd.json_normalize(data)
+                    raise ValueError(f"Unexpected data type: {type(data)}")
                 
                 # Ensure column names are lowercase
                 df.columns = [col.lower() for col in df.columns]
@@ -216,9 +226,13 @@ jobs:
             # Fetch tickers one by one with delays to avoid rate limiting
             for i, ticker in enumerate(ALL_TICKERS):
                 if i > 0:
-                    delay = 5  # Increased delay to 5 seconds
+                    delay = 10  # Increased delay to 10 seconds for GitHub Actions
                     print(f"Waiting {delay} seconds before fetching {ticker}...")
                     time.sleep(delay)
+                elif i == 0:
+                    # Even wait before first ticker to let any previous requests settle
+                    print("Initial 5 second delay before first ticker...")
+                    time.sleep(5)
                 
                 try:
                     fetch_data(ticker, lookback_days)
