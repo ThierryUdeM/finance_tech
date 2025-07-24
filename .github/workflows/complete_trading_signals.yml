@@ -71,10 +71,14 @@ jobs:
       shell: bash -l {0}
       run: |
         # Install TA-Lib and other dependencies via conda-forge
-        conda install -c conda-forge ta-lib pandas numpy yfinance scipy scikit-learn -y
+        conda install -c conda-forge ta-lib pandas numpy scipy scikit-learn -y
         
-        # Install Azure dependencies via pip
+        # Install/upgrade yfinance and Azure dependencies via pip
+        pip install --upgrade --no-cache-dir yfinance
         pip install azure-storage-blob python-dotenv
+        
+        # Show yfinance version
+        python -c "import yfinance as yf; print(f'yfinance version: {yf.__version__}')"
         
         # Verify TA-Lib installation
         python -c "import talib; print(f'TA-Lib version: {talib.__version__}')"
@@ -216,86 +220,163 @@ jobs:
                 print(f"Error loading historical data for {ticker} from Azure: {str(e)}")
                 return None
         
-        def fetch_all_ticker_data(lookback_days=1):
-            """Fetch current data for all tickers individually with delays"""
-            global TICKER_DATA_CACHE
-            import time
-            
-            print("Fetching current data for tickers individually...")
-            
-            # Fetch tickers one by one with delays to avoid rate limiting
-            for i, ticker in enumerate(ALL_TICKERS):
-                if i > 0:
-                    delay = 10  # Increased delay to 10 seconds for GitHub Actions
-                    print(f"Waiting {delay} seconds before fetching {ticker}...")
-                    time.sleep(delay)
-                elif i == 0:
-                    # Even wait before first ticker to let any previous requests settle
-                    print("Initial 5 second delay before first ticker...")
-                    time.sleep(5)
+        def check_azure_cache(filename):
+            """Check if today's data is already cached in Azure"""
+            try:
+                blob_service_client = get_blob_service_client()
+                container_name = os.environ.get('AZURE_CONTAINER_NAME') or os.environ.get('CONTAINER_NAME')
+                blob_path = f'cache/{filename}'
                 
-                try:
-                    fetch_data(ticker, lookback_days)
-                except Exception as e:
-                    print(f"Error fetching {ticker}: {str(e)}")
-                    # If rate limited, wait longer and retry
-                    if "Rate limit" in str(e):
-                        print(f"Rate limited. Waiting 30 seconds before retrying {ticker}...")
-                        time.sleep(30)
-                        try:
-                            fetch_data(ticker, lookback_days)
-                        except Exception as e2:
-                            print(f"Retry failed for {ticker}: {str(e2)}")
-            
-            return  # Exit early - we're using individual fetching
+                blob_client = blob_service_client.get_blob_client(container=container_name, blob=blob_path)
+                return blob_client.exists()
+            except:
+                return False
         
-        def fetch_data(ticker, lookback_days=1):
-            """Fetch current data for model predictions"""
+        def load_cached_data(filename):
+            """Load cached data from Azure"""
+            try:
+                blob_service_client = get_blob_service_client()
+                container_name = os.environ.get('AZURE_CONTAINER_NAME') or os.environ.get('CONTAINER_NAME')
+                blob_path = f'cache/{filename}'
+                
+                blob_client = blob_service_client.get_blob_client(container=container_name, blob=blob_path)
+                
+                # Download to temp file
+                temp_file = f'/tmp/{filename}'
+                with open(temp_file, 'wb') as f:
+                    f.write(blob_client.download_blob().readall())
+                
+                # Load parquet file
+                import pandas as pd
+                data = pd.read_parquet(temp_file)
+                
+                # Process each ticker
+                for ticker in ALL_TICKERS:
+                    if ticker in data.columns.levels[0]:
+                        ticker_data = data[ticker].copy()
+                        ticker_data = ticker_data.reset_index()
+                        ticker_data.rename(columns={'Date': 'timestamp', 'Datetime': 'timestamp'}, inplace=True)
+                        ticker_data.columns = [col.lower() for col in ticker_data.columns]
+                        
+                        if 'returns' not in ticker_data.columns:
+                            ticker_data['returns'] = ticker_data['close'].pct_change()
+                        if 'vwap' not in ticker_data.columns:
+                            ticker_data['vwap'] = (ticker_data['close'] * ticker_data['volume']).cumsum() / ticker_data['volume'].cumsum()
+                        
+                        TICKER_DATA_CACHE[ticker] = ticker_data
+                        print(f"Loaded cached data for {ticker}: {len(ticker_data)} rows")
+                
+                os.remove(temp_file)
+                return True
+            except Exception as e:
+                print(f"Error loading cache: {str(e)}")
+                return False
+        
+        def save_to_azure_cache(filename, data):
+            """Save data to Azure cache"""
+            try:
+                blob_service_client = get_blob_service_client()
+                container_name = os.environ.get('AZURE_CONTAINER_NAME') or os.environ.get('CONTAINER_NAME')
+                blob_path = f'cache/{filename}'
+                
+                # Save to temp file first
+                temp_file = f'/tmp/{filename}'
+                data.to_parquet(temp_file)
+                
+                # Upload to Azure
+                blob_client = blob_service_client.get_blob_client(container=container_name, blob=blob_path)
+                with open(temp_file, 'rb') as f:
+                    blob_client.upload_blob(f, overwrite=True)
+                
+                os.remove(temp_file)
+                print(f"Saved cache to Azure: {blob_path}")
+            except Exception as e:
+                print(f"Error saving cache: {str(e)}")
+        
+        def fetch_all_ticker_data(lookback_days=1):
+            """Fetch current data for all tickers in one shot"""
             global TICKER_DATA_CACHE
             import time
             
-            # Check cache first
-            if ticker in TICKER_DATA_CACHE:
-                print(f"Using cached data for {ticker}")
-                return TICKER_DATA_CACHE[ticker]
+            print("Fetching current data for all tickers in bulk...")
             
-            # Add retry logic for rate limiting
+            # Check if we have cached data for today
+            cache_file = f"live_data_{datetime.now().strftime('%Y%m%d')}.parquet"
+            
+            # Try to use cached data first
+            if check_azure_cache(cache_file):
+                print(f"Using cached data from {cache_file}")
+                load_cached_data(cache_file)
+                return
+            
+            # Fetch all tickers in one request
             max_retries = 3
-            retry_delay = 5  # seconds
+            retry_delays = [15, 45, 120]  # Exponential backoff: 15s, 45s, 2min
             
             for attempt in range(max_retries):
                 try:
                     if attempt > 0:
-                        print(f"Retry attempt {attempt + 1} for {ticker}")
-                        time.sleep(retry_delay * attempt)  # Exponential backoff
+                        delay = retry_delays[attempt - 1]
+                        print(f"Retry attempt {attempt + 1} - waiting {delay} seconds...")
+                        time.sleep(delay)
                     
-                    # Fetch only 1 day of current data for predictions
                     end_date = datetime.now()
                     start_date = end_date - timedelta(days=lookback_days)
                     
-                    # Use Ticker object instead of download for better rate limit handling
-                    yticker = yf.Ticker(ticker)
-                    data = yticker.history(start=start_date, end=end_date, 
-                                         interval='15m', auto_adjust=True, 
-                                         prepost=False)
+                    # Download all tickers at once
+                    print(f"Downloading data for: {', '.join(ALL_TICKERS)}")
+                    data = yf.download(
+                        tickers=ALL_TICKERS,
+                        start=start_date,
+                        end=end_date,
+                        interval='15m',
+                        group_by='ticker',
+                        threads=False,  # Single thread as recommended
+                        progress=False
+                    )
                     
                     if data.empty:
-                        return None
+                        raise Exception("No data returned from yfinance")
                     
-                    data.columns = [col.lower() for col in data.columns]
-                    data.reset_index(inplace=True)
-                    data.rename(columns={'Datetime': 'timestamp'}, inplace=True)
-                    data['returns'] = data['close'].pct_change()
-                    data['vwap'] = (data['close'] * data['volume']).cumsum() / data['volume'].cumsum()
+                    # Process each ticker's data
+                    for ticker in ALL_TICKERS:
+                        try:
+                            if len(ALL_TICKERS) == 1:
+                                ticker_data = data
+                            else:
+                                ticker_data = data[ticker]
+                            
+                            # Clean and prepare data
+                            ticker_data = ticker_data.copy()
+                            ticker_data = ticker_data.reset_index()
+                            ticker_data.rename(columns={'Date': 'timestamp', 'Datetime': 'timestamp'}, inplace=True)
+                            ticker_data.columns = [col.lower() for col in ticker_data.columns]
+                            ticker_data['returns'] = ticker_data['close'].pct_change()
+                            ticker_data['vwap'] = (ticker_data['close'] * ticker_data['volume']).cumsum() / ticker_data['volume'].cumsum()
+                            
+                            TICKER_DATA_CACHE[ticker] = ticker_data
+                            print(f"Cached data for {ticker}: {len(ticker_data)} rows")
+                        except Exception as e:
+                            print(f"Error processing {ticker}: {str(e)}")
                     
-                    # Cache the data
-                    TICKER_DATA_CACHE[ticker] = data
-                    return data
+                    # Save to cache if successful
+                    if len(TICKER_DATA_CACHE) > 0:
+                        save_to_azure_cache(cache_file, data)
+                    
+                    return  # Success!
+                    
                 except Exception as e:
-                    if "Rate limited" in str(e) and attempt < max_retries - 1:
-                        continue
-                    print(f"Error fetching {ticker}: {str(e)}")
-                    return None
+                    print(f"Error in bulk download (attempt {attempt + 1}): {str(e)}")
+                    if attempt == max_retries - 1:
+                        print("All retries exhausted. Giving up.")
+                    
+            return
+        
+        def get_cached_data(ticker):
+            """Get data for a ticker from cache"""
+            if ticker in TICKER_DATA_CACHE:
+                return TICKER_DATA_CACHE[ticker]
+            return None
         
         def run_model_for_ticker(ticker, model_func):
             """Run ensemble model and extract detailed outputs"""
@@ -307,10 +388,10 @@ jobs:
                 print(f"No historical data available for {ticker} in Azure")
                 return None
             
-            # Fetch current data from Yahoo
-            current_data = fetch_data(ticker)
+            # Get current data from cache
+            current_data = get_cached_data(ticker)
             if current_data is None:
-                print(f"No current data available for {ticker} from Yahoo")
+                print(f"No current data available for {ticker}")
                 return None
                 
             print(f"Historical data shape for {ticker}: {historical_data.shape}")
