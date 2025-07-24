@@ -41,8 +41,9 @@ def ensemble_aapl_v2(train_data: pd.DataFrame, test_data: pd.DataFrame, **kwargs
         short_threshold=0.4,
         # Risk management
         max_daily_trades=2,
-        stop_loss_pct=0.02,
-        trailing_stop_pct=0.015,
+        atr_stop_multiplier=0.5,
+        trailing_start_r=0.5,
+        portfolio_stop_r=2.0,
         # Probability calibration
         prob_calibration_strength=2.0
     )

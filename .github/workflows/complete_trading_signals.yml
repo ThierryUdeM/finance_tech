@@ -71,7 +71,7 @@ jobs:
       shell: bash -l {0}
       run: |
         # Install TA-Lib and other dependencies via conda-forge
-        conda install -c conda-forge ta-lib pandas numpy scipy scikit-learn -y
+        conda install -c conda-forge ta-lib pandas numpy scipy scikit-learn pyarrow -y
         
         # Install/upgrade yfinance and Azure dependencies via pip
         pip install --upgrade --no-cache-dir yfinance
@@ -482,7 +482,7 @@ jobs:
       shell: bash -l {0}
       run: |
         cd ensemble
-        python generate_trading_signals.py
+        python generate_trading_signals_from_cache.py
         cd ..
     
     - name: Generate position sizing report
