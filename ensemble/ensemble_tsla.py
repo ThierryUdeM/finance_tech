@@ -14,7 +14,7 @@ import os
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from .ensemble_base import EnsembleModel
-from .momentum_shapematching.v1_TSLA import momentum_shape_model
+from .momentum_shapematching.v1_TSLA import v1_tsla_model
 from .simple_technical.simple_technical_tsla import simple_technical_tsla
 
 
@@ -30,7 +30,7 @@ def ensemble_tsla(train_data: pd.DataFrame, test_data: pd.DataFrame, **kwargs) -
     
     # Initialize ensemble with TSLA-specific parameters
     ensemble = EnsembleModel(
-        momentum_model=momentum_shape_model,
+        momentum_model=v1_tsla_model,
         technical_model=simple_technical_tsla,
         ticker='TSLA',
         # Regime parameters - TSLA is volatile
