@@ -83,12 +83,12 @@ jobs:
     - name: Run ensemble models for all tickers
       shell: bash -l {0}
       env:
-        AZURE_STORAGE_ACCOUNT: ${{ secrets.AZURE_STORAGE_ACCOUNT }}
-        AZURE_STORAGE_KEY: ${{ secrets.AZURE_STORAGE_KEY }}
-        AZURE_CONTAINER_NAME: ${{ secrets.AZURE_CONTAINER_NAME }}
-        STORAGE_ACCOUNT_NAME: ${{ secrets.AZURE_STORAGE_ACCOUNT }}
-        ACCESS_KEY: ${{ secrets.AZURE_STORAGE_KEY }}
-        CONTAINER_NAME: ${{ secrets.AZURE_CONTAINER_NAME }}
+        AZURE_STORAGE_ACCOUNT: ${{ secrets.STORAGE_ACCOUNT_NAME }}
+        AZURE_STORAGE_KEY: ${{ secrets.ACCESS_KEY }}
+        AZURE_CONTAINER_NAME: ${{ secrets.CONTAINER_NAME }}
+        STORAGE_ACCOUNT_NAME: ${{ secrets.STORAGE_ACCOUNT_NAME }}
+        ACCESS_KEY: ${{ secrets.ACCESS_KEY }}
+        CONTAINER_NAME: ${{ secrets.CONTAINER_NAME }}
       run: |
         # Create a script to run models individually and save outputs
         cat > run_ensemble_models.py << 'EOF'
@@ -124,8 +124,17 @@ jobs:
         HISTORICAL_DATA_CACHE = {}
         
         # Print environment variables for debugging
-        print("Azure Storage Account:", os.environ.get('AZURE_STORAGE_ACCOUNT', 'NOT SET'))
-        print("Container Name:", os.environ.get('AZURE_CONTAINER_NAME', 'NOT SET'))
+        azure_account = os.environ.get('AZURE_STORAGE_ACCOUNT', '')
+        azure_container = os.environ.get('AZURE_CONTAINER_NAME', '')
+        print(f"Azure Storage Account: {'SET' if azure_account else 'NOT SET'}")
+        print(f"Container Name: {'SET' if azure_container else 'NOT SET'}")
+        
+        if not azure_account or not azure_container:
+            print("WARNING: Azure credentials are not set. The workflow will continue without historical data.")
+            print("To use Azure historical data, set these GitHub secrets:")
+            print("  - STORAGE_ACCOUNT_NAME")
+            print("  - ACCESS_KEY") 
+            print("  - CONTAINER_NAME")
         
         def get_blob_service_client():
             """Initialize Azure Blob Service Client"""
@@ -187,13 +196,22 @@ jobs:
             # Fetch tickers one by one with delays to avoid rate limiting
             for i, ticker in enumerate(ALL_TICKERS):
                 if i > 0:
-                    print(f"Waiting 2 seconds before fetching {ticker}...")
-                    time.sleep(2)  # Delay between requests
+                    delay = 5  # Increased delay to 5 seconds
+                    print(f"Waiting {delay} seconds before fetching {ticker}...")
+                    time.sleep(delay)
                 
                 try:
                     fetch_data(ticker, lookback_days)
                 except Exception as e:
                     print(f"Error fetching {ticker}: {str(e)}")
+                    # If rate limited, wait longer and retry
+                    if "Rate limit" in str(e):
+                        print(f"Rate limited. Waiting 30 seconds before retrying {ticker}...")
+                        time.sleep(30)
+                        try:
+                            fetch_data(ticker, lookback_days)
+                        except Exception as e2:
+                            print(f"Retry failed for {ticker}: {str(e2)}")
             
             return  # Exit early - we're using individual fetching
         
@@ -221,8 +239,11 @@ jobs:
                     end_date = datetime.now()
                     start_date = end_date - timedelta(days=lookback_days)
                     
-                    data = yf.download(ticker, start=start_date, end=end_date, 
-                                     interval='15m', progress=False)
+                    # Use Ticker object instead of download for better rate limit handling
+                    yticker = yf.Ticker(ticker)
+                    data = yticker.history(start=start_date, end=end_date, 
+                                         interval='15m', progress=False, 
+                                         auto_adjust=True, prepost=False)
                     
                     if data.empty:
                         return None
