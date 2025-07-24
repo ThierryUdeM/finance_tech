@@ -86,6 +86,9 @@ jobs:
         AZURE_STORAGE_ACCOUNT: ${{ secrets.AZURE_STORAGE_ACCOUNT }}
         AZURE_STORAGE_KEY: ${{ secrets.AZURE_STORAGE_KEY }}
         AZURE_CONTAINER_NAME: ${{ secrets.AZURE_CONTAINER_NAME }}
+        STORAGE_ACCOUNT_NAME: ${{ secrets.AZURE_STORAGE_ACCOUNT }}
+        ACCESS_KEY: ${{ secrets.AZURE_STORAGE_KEY }}
+        CONTAINER_NAME: ${{ secrets.AZURE_CONTAINER_NAME }}
       run: |
         # Create a script to run models individually and save outputs
         cat > run_ensemble_models.py << 'EOF'
@@ -119,6 +122,10 @@ jobs:
         # Global cache for ticker data
         TICKER_DATA_CACHE = {}
         HISTORICAL_DATA_CACHE = {}
+        
+        # Print environment variables for debugging
+        print("Azure Storage Account:", os.environ.get('AZURE_STORAGE_ACCOUNT', 'NOT SET'))
+        print("Container Name:", os.environ.get('AZURE_CONTAINER_NAME', 'NOT SET'))
         
         def get_blob_service_client():
             """Initialize Azure Blob Service Client"""
@@ -171,61 +178,24 @@ jobs:
                 return None
         
         def fetch_all_ticker_data(lookback_days=1):
-            """Fetch current data for all tickers at once to minimize API calls"""
+            """Fetch current data for all tickers individually with delays"""
             global TICKER_DATA_CACHE
+            import time
             
-            print("Fetching current data for all tickers in one batch...")
-            try:
-                # Fetch only 1 day of current 15m data from Yahoo
-                end_date = datetime.now()
-                start_date = end_date - timedelta(days=lookback_days)
-                print(f"Date range: {start_date} to {end_date}")
+            print("Fetching current data for tickers individually...")
+            
+            # Fetch tickers one by one with delays to avoid rate limiting
+            for i, ticker in enumerate(ALL_TICKERS):
+                if i > 0:
+                    print(f"Waiting 2 seconds before fetching {ticker}...")
+                    time.sleep(2)  # Delay between requests
                 
-                # Download all tickers at once
-                data = yf.download(
-                    tickers=' '.join(ALL_TICKERS),
-                    start=start_date,
-                    end=end_date,
-                    interval='15m',
-                    progress=True,
-                    group_by='ticker',
-                    threads=False  # Avoid concurrent requests
-                )
-                
-                # Process each ticker's data
-                for ticker in ALL_TICKERS:
-                    try:
-                        if len(ALL_TICKERS) == 1:
-                            ticker_data = data
-                        else:
-                            ticker_data = data[ticker]
-                        
-                        if ticker_data.empty or ticker_data['Close'].isna().all():
-                            print(f"No data for {ticker}")
-                            continue
-                        
-                        # Clean and prepare data
-                        ticker_data = ticker_data.copy()
-                        ticker_data.columns = [col.lower() for col in ticker_data.columns]
-                        ticker_data = ticker_data.reset_index()
-                        ticker_data.rename(columns={'Date': 'timestamp', 'Datetime': 'timestamp'}, inplace=True)
-                        ticker_data['returns'] = ticker_data['close'].pct_change()
-                        ticker_data['vwap'] = (ticker_data['close'] * ticker_data['volume']).cumsum() / ticker_data['volume'].cumsum()
-                        
-                        TICKER_DATA_CACHE[ticker] = ticker_data
-                        print(f"Cached data for {ticker}: {len(ticker_data)} rows")
-                        
-                    except Exception as e:
-                        print(f"Error processing {ticker}: {str(e)}")
-                        
-            except Exception as e:
-                print(f"Error in bulk download: {str(e)}")
-                # Fall back to individual fetching
-                import time
-                for i, ticker in enumerate(ALL_TICKERS):
-                    if i > 0:
-                        time.sleep(3)
+                try:
                     fetch_data(ticker, lookback_days)
+                except Exception as e:
+                    print(f"Error fetching {ticker}: {str(e)}")
+            
+            return  # Exit early - we're using individual fetching
         
         def fetch_data(ticker, lookback_days=1):
             """Fetch current data for model predictions"""
@@ -346,7 +316,7 @@ jobs:
             'MSFT': ensemble_msft_v2
         }
         
-        # Fetch all data upfront
+        # Fetch current data for all tickers with rate limiting protection
         fetch_all_ticker_data()
         
         # Run all models
