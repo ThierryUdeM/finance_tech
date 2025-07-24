@@ -17,14 +17,14 @@ warnings.filterwarnings('ignore')
 # Add parent directory to path for imports
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-# Import ensemble models
-from walk_forward_tests.model.hybrid_momentum_technical.ensemble_nvda import ensemble_nvda
-from walk_forward_tests.model.hybrid_momentum_technical.ensemble_tsla import ensemble_tsla
-from walk_forward_tests.model.hybrid_momentum_technical.ensemble_aapl_v2 import ensemble_aapl_v2
-from walk_forward_tests.model.hybrid_momentum_technical.ensemble_msft_v2 import ensemble_msft_v2
+# Import ensemble models from current directory
+from ensemble_nvda import ensemble_nvda
+from ensemble_tsla import ensemble_tsla
+from ensemble_aapl_v2 import ensemble_aapl_v2
+from ensemble_msft_v2 import ensemble_msft_v2
 
 # Import market regime classification
-from walk_forward_tests.model.hybrid_momentum_technical.market_regime import classify_regime
+from market_regime import classify_regime
 
 
 def fetch_latest_data(ticker, lookback_days=90):
