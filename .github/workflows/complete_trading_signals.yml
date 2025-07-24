@@ -91,17 +91,18 @@ jobs:
         import warnings
         warnings.filterwarnings('ignore')
         
-        # Add parent directory to path
-        sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+        # Add ensemble directory to path
+        ensemble_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'ensemble')
+        sys.path.insert(0, ensemble_path)
         
-        # Import ensemble models
-        from ensemble.ensemble_nvda import ensemble_nvda
-        from ensemble.ensemble_tsla import ensemble_tsla
-        from ensemble.ensemble_aapl_v2 import ensemble_aapl_v2
-        from ensemble.ensemble_msft_v2 import ensemble_msft_v2
+        # Import ensemble models directly
+        from ensemble_nvda import ensemble_nvda
+        from ensemble_tsla import ensemble_tsla
+        from ensemble_aapl_v2 import ensemble_aapl_v2
+        from ensemble_msft_v2 import ensemble_msft_v2
         
         # Import market regime
-        from ensemble.market_regime import classify_regime
+        from market_regime import classify_regime
         
         def fetch_data(ticker, lookback_days=90):
             """Fetch and prepare data for model"""
