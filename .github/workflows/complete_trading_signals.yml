@@ -293,12 +293,12 @@ jobs:
             except Exception as e:
                 print(f"Error saving cache: {str(e)}")
         
-        def fetch_all_ticker_data(lookback_days=3):
-            """Fetch current data for all tickers in one shot"""
+        def fetch_all_ticker_data():
+            """Fetch only current intraday data for all tickers"""
             global TICKER_DATA_CACHE
             import time
             
-            print("Fetching current data for all tickers in bulk...")
+            print("Fetching current intraday data for all tickers...")
             
             # Check if we have cached data for today
             cache_file = f"live_data_{datetime.now().strftime('%Y%m%d')}.parquet"
@@ -307,16 +307,17 @@ jobs:
             if check_azure_cache(cache_file):
                 print(f"Using cached data from {cache_file}")
                 if load_cached_data(cache_file):
-                    # Verify we have enough data
+                    # Check if data is recent (within last hour)
                     for ticker in ALL_TICKERS:
-                        if ticker in TICKER_DATA_CACHE and len(TICKER_DATA_CACHE[ticker]) >= 26:
+                        if ticker in TICKER_DATA_CACHE and len(TICKER_DATA_CACHE[ticker]) > 0:
+                            # Data is good, continue
                             continue
                         else:
-                            print(f"Cached data insufficient for {ticker}, fetching fresh data...")
+                            print(f"No cached data for {ticker}, fetching fresh data...")
                             TICKER_DATA_CACHE.clear()
                             break
                     else:
-                        # All tickers have sufficient data
+                        # All tickers have data
                         return
             
             # Fetch all tickers in one request
@@ -330,11 +331,13 @@ jobs:
                         print(f"Retry attempt {attempt + 1} - waiting {delay} seconds...")
                         time.sleep(delay)
                     
+                    # For 15-minute data, we can only get today's data from Yahoo Finance
+                    # The models will use the 2.5 years of historical data from Azure
                     end_date = datetime.now()
-                    start_date = end_date - timedelta(days=lookback_days)
+                    start_date = end_date.replace(hour=0, minute=0, second=0, microsecond=0)
                     
-                    # Download all tickers at once
-                    print(f"Downloading data for: {', '.join(ALL_TICKERS)}")
+                    # Download all tickers at once - just today's intraday data
+                    print(f"Downloading today's intraday data for: {', '.join(ALL_TICKERS)}")
                     data = yf.download(
                         tickers=ALL_TICKERS,
                         start=start_date,
@@ -389,35 +392,35 @@ jobs:
             return None
         
         def run_model_for_ticker(ticker, model_func):
-            """Run ensemble model and extract detailed outputs"""
+            """Run ensemble model and extract detailed outputs
+            
+            Architecture:
+            - train_data: 2.5 years of historical 15-min data from Azure (pattern library)
+            - test_data: Today's intraday 15-min data from Yahoo Finance (for signals)
+            """
             print(f"Running model for {ticker}...")
             
-            # Load historical data from Azure for pattern matching
+            # Load 2.5 years of historical data from Azure for pattern matching
             historical_data = load_historical_data_from_azure(ticker)
             if historical_data is None:
                 print(f"No historical data available for {ticker} in Azure")
                 return None
             
-            # Get current data from cache
+            # Get today's intraday data from cache (fetched from Yahoo Finance)
             current_data = get_cached_data(ticker)
             if current_data is None:
-                print(f"No current data available for {ticker}")
+                print(f"No current intraday data available for {ticker}")
                 return None
                 
             print(f"Historical data shape for {ticker}: {historical_data.shape}")
-            print(f"Current data shape for {ticker}: {current_data.shape}")
+            print(f"Current intraday data shape for {ticker}: {current_data.shape}")
             
-            # Use ALL 2.5 years of historical data as the pattern library
-            # The momentum model will search through this entire history
+            # train_data: 2.5 years of patterns for the momentum models to match against
             train_data = historical_data.copy()
             
-            # Use current data for predictions (last few hours)
-            # Ensure we have at least 26 rows, or use what we have
-            if len(current_data) >= 26:
-                test_data = current_data.iloc[-26:].copy()  # Last 6.5 hours of current data
-            else:
-                print(f"Warning: Only {len(current_data)} rows available for {ticker}, using all")
-                test_data = current_data.copy()
+            # test_data: Today's intraday data for generating current signals
+            test_data = current_data.copy()
+            print(f"Using {len(test_data)} rows of today's intraday data for signal generation")
             
             # Ensure test_data has required derived columns
             if 'returns' not in test_data.columns:
@@ -493,7 +496,7 @@ jobs:
             'MSFT': ensemble_msft_v2
         }
         
-        # Fetch current data for all tickers with rate limiting protection
+        # Fetch today's intraday data for all tickers with rate limiting protection
         fetch_all_ticker_data()
         
         # Run all models
