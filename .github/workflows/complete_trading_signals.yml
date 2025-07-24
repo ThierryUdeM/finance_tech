@@ -293,7 +293,7 @@ jobs:
             except Exception as e:
                 print(f"Error saving cache: {str(e)}")
         
-        def fetch_all_ticker_data(lookback_days=1):
+        def fetch_all_ticker_data(lookback_days=3):
             """Fetch current data for all tickers in one shot"""
             global TICKER_DATA_CACHE
             import time
@@ -306,8 +306,18 @@ jobs:
             # Try to use cached data first
             if check_azure_cache(cache_file):
                 print(f"Using cached data from {cache_file}")
-                load_cached_data(cache_file)
-                return
+                if load_cached_data(cache_file):
+                    # Verify we have enough data
+                    for ticker in ALL_TICKERS:
+                        if ticker in TICKER_DATA_CACHE and len(TICKER_DATA_CACHE[ticker]) >= 26:
+                            continue
+                        else:
+                            print(f"Cached data insufficient for {ticker}, fetching fresh data...")
+                            TICKER_DATA_CACHE.clear()
+                            break
+                    else:
+                        # All tickers have sufficient data
+                        return
             
             # Fetch all tickers in one request
             max_retries = 3
@@ -402,7 +412,21 @@ jobs:
             train_data = historical_data.copy()
             
             # Use current data for predictions (last few hours)
-            test_data = current_data.iloc[-26:].copy()  # Last 6.5 hours of current data
+            # Ensure we have at least 26 rows, or use what we have
+            if len(current_data) >= 26:
+                test_data = current_data.iloc[-26:].copy()  # Last 6.5 hours of current data
+            else:
+                print(f"Warning: Only {len(current_data)} rows available for {ticker}, using all")
+                test_data = current_data.copy()
+            
+            # Ensure test_data has required derived columns
+            if 'returns' not in test_data.columns:
+                test_data['returns'] = test_data['close'].pct_change()
+            if 'vwap' not in test_data.columns or test_data['vwap'].isna().all():
+                test_data['vwap'] = (test_data['close'] * test_data['volume']).cumsum() / test_data['volume'].cumsum()
+            
+            # Fill any NaN values
+            test_data = test_data.ffill().bfill()
             
             try:
                 # Run model
@@ -416,8 +440,30 @@ jobs:
                 
                 position_size = signals['position_size'].iloc[-1] if 'position_size' in signals.columns else 1.0
                 
-                # Calculate regime
-                regime_data = classify_regime(test_data)
+                # Calculate regime with error handling
+                try:
+                    regime_data = classify_regime(test_data)
+                    regime_info = {
+                        'label': regime_data['regime_label'].iloc[-1],
+                        'score': float(regime_data['regime_score'].iloc[-1]),
+                        'adx': float(regime_data['adx'].iloc[-1]),
+                        'hurst': float(regime_data['hurst'].iloc[-1])
+                    }
+                except Exception as e:
+                    print(f"Warning: Could not calculate regime for {ticker}: {str(e)}")
+                    regime_info = {
+                        'label': 'Unknown',
+                        'score': 0.0,
+                        'adx': 0.0,
+                        'hurst': 0.5
+                    }
+                
+                # Calculate volume ratio with safety check
+                volume_mean = test_data['volume'].mean()
+                if volume_mean > 0:
+                    volume_ratio = float(test_data['volume'].iloc[-1] / volume_mean)
+                else:
+                    volume_ratio = 1.0
                 
                 # Extract model internals if available
                 model_details = {
@@ -427,13 +473,8 @@ jobs:
                     'position_size': float(position_size),
                     'latest_price': float(test_data['close'].iloc[-1]),
                     'vwap': float(test_data['vwap'].iloc[-1]),
-                    'volume_ratio': float(test_data['volume'].iloc[-1] / test_data['volume'].mean()),
-                    'regime': {
-                        'label': regime_data['regime_label'].iloc[-1],
-                        'score': float(regime_data['regime_score'].iloc[-1]),
-                        'adx': float(regime_data['adx'].iloc[-1]),
-                        'hurst': float(regime_data['hurst'].iloc[-1])
-                    },
+                    'volume_ratio': volume_ratio,
+                    'regime': regime_info,
                     'data_points': len(test_data),
                     'model_type': 'V1' if ticker in ['NVDA', 'TSLA'] else 'V2'
                 }
