@@ -1,0 +1,118 @@
+name: Trading Signal Detector
+
+on:
+  schedule:
+    # Run every 15 minutes during market hours (9:30 AM - 4:00 PM ET)
+    # GitHub Actions uses UTC, so 9:30 AM - 4:00 PM ET is 2:30 PM - 9:00 PM UTC (during EST)
+    # or 1:30 PM - 8:00 PM UTC (during EDT)
+    - cron: '*/15 13-21 * * 1-5'  # Every 15 min, 1:30 PM - 9:00 PM UTC, Mon-Fri
+  
+  workflow_dispatch:  # Allow manual trigger
+    inputs:
+      test_mode:
+        description: 'Run in test mode'
+        required: false
+        default: 'false'
+
+jobs:
+  detect-signals:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v3
+    
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.9'
+    
+    - name: Cache pip packages
+      uses: actions/cache@v3
+      with:
+        path: ~/.cache/pip
+        key: ${{ runner.os }}-pip-${{ hashFiles('**/requirements.txt') }}
+        restore-keys: |
+          ${{ runner.os }}-pip-
+    
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install -r requirements_actions.txt
+    
+    - name: Check market hours
+      id: market_check
+      run: |
+        python -c "
+        import pytz
+        from datetime import datetime
+        et_tz = pytz.timezone('America/New_York')
+        now_et = datetime.now(et_tz)
+        is_market_hours = (
+            now_et.weekday() < 5 and  # Monday-Friday
+            ((now_et.hour == 9 and now_et.minute >= 30) or 
+             (now_et.hour > 9 and now_et.hour < 16))
+        )
+        print(f'::set-output name=is_open::{str(is_market_hours).lower()}')
+        print(f'Current ET time: {now_et.strftime(\"%Y-%m-%d %H:%M:%S %Z\")}')
+        print(f'Market is {\"OPEN\" if is_market_hours else \"CLOSED\"}')"
+    
+    - name: Run signal detector
+      if: always()  # Always run, let the script decide what to do
+      env:
+        GMAIL_USER: ${{ secrets.GMAIL_USER }}
+        GMAIL_APP_PWD: ${{ secrets.GMAIL_APP_PWD }}
+        ALERT_TO: ${{ secrets.ALERT_TO }}
+        TICKERS: ${{ secrets.TICKERS }}
+        TEST_MODE: ${{ github.event.inputs.test_mode }}
+      run: |
+        python signal_detector.py
+    
+    - name: Upload signal results
+      if: always()
+      uses: actions/upload-artifact@v3
+      with:
+        name: signal-results
+        path: signals.json
+        retention-days: 7
+    
+    - name: Signal summary
+      if: steps.market_check.outputs.is_open == 'true' || github.event.inputs.test_mode == 'true'
+      run: |
+        if [ -f signals.json ]; then
+          echo "## Signal Detection Results" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          python -c "
+          import json
+          with open('signals.json', 'r') as f:
+              data = json.load(f)
+          print(f\"**Timestamp:** {data['timestamp']}\")
+          print(f\"**Tickers Scanned:** {data['tickers_scanned']}\")
+          print(f\"**Signals Found:** {len(data['signals'])}\")
+          print()
+          if data['signals']:
+              print('### Detected Signals:')
+              for s in data['signals']:
+                  print(f\"- **{s['ticker']}** - {s['strategy']} @ \${s['entry']:.2f} (Confidence: {s['confidence']}%)\")"
+          " >> $GITHUB_STEP_SUMMARY
+        fi
+
+  # Optional: Store signals in a database or send to webhook
+  process-signals:
+    needs: detect-signals
+    runs-on: ubuntu-latest
+    if: success()
+    
+    steps:
+    - name: Download signal results
+      uses: actions/download-artifact@v3
+      with:
+        name: signal-results
+    
+    - name: Process signals
+      run: |
+        if [ -f signals.json ]; then
+          echo "Processing signals..."
+          # Add any additional processing here
+          # e.g., send to database, webhook, etc.
+        fi
