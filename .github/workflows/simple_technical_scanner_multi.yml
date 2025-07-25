@@ -39,6 +39,12 @@ jobs:
           echo "market_open=false" >> $GITHUB_OUTPUT
           echo "Market is closed - skipping scan"
         fi
+
+    - name: Debug NY Time
+      run: |
+        echo "UTC time: $(date -u)"
+        echo "New York time: $(TZ='America/New_York' date)"
+        echo "Runner local time: $(date)"
     
     - name: Checkout repository
       if: steps.market-check.outputs.market_open == 'true' || github.event_name == 'workflow_dispatch'
