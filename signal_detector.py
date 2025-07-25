@@ -259,23 +259,10 @@ def send_email_alert(signals):
         </div>
         """)
     
-    # Check if market is closed
-    et_tz = pytz.timezone('America/New_York')
-    now_et = datetime.now(et_tz)
-    market_open = (
-        now_et.weekday() < 5 and
-        ((now_et.hour == 9 and now_et.minute >= 30) or 
-         (now_et.hour > 9 and now_et.hour < 16))
-    )
-    
-    data_note = ""
-    if not market_open:
-        data_note = "<br><b>Note:</b> Market is closed. Signals based on last trading day's closing data."
-    
     html_parts.append(f"""
     <p style="margin-top: 20px; color: #666;">
     <i>Automated signal detection via GitHub Actions<br>
-    Generated at {datetime.now().strftime('%Y-%m-%d %H:%M:%S')} UTC{data_note}</i>
+    Generated at {datetime.now().strftime('%Y-%m-%d %H:%M:%S')} UTC</i>
     </p>
     """)
     
@@ -292,6 +279,39 @@ def send_email_alert(signals):
     except Exception as e:
         print(f"Failed to send email: {str(e)}")
         return False
+
+def load_sent_signals():
+    """Load previously sent signals to avoid duplicates"""
+    try:
+        with open('sent_signals.json', 'r') as f:
+            return json.load(f)
+    except FileNotFoundError:
+        return {}
+
+def save_sent_signals(sent_signals):
+    """Save sent signals to file"""
+    with open('sent_signals.json', 'w') as f:
+        json.dump(sent_signals, f, indent=2)
+
+def generate_signal_id(signal):
+    """Generate unique ID for signal to track duplicates"""
+    return f"{signal['ticker']}_{signal['strategy']}_{signal['entry']:.2f}_{signal['time'].split()[0]}"
+
+def is_duplicate_signal(signal, sent_signals):
+    """Check if signal was already sent today"""
+    signal_id = generate_signal_id(signal)
+    today = datetime.now().strftime('%Y-%m-%d')
+    
+    # Clean old signals (older than 1 day)
+    keys_to_remove = []
+    for key, timestamp in sent_signals.items():
+        if timestamp.split('T')[0] != today:
+            keys_to_remove.append(key)
+    
+    for key in keys_to_remove:
+        del sent_signals[key]
+    
+    return signal_id in sent_signals
 
 def main():
     """Main function"""
@@ -322,16 +342,30 @@ def main():
     # Check if running in test mode
     test_mode = os.environ.get('TEST_MODE', 'false').lower() == 'true'
     
-    if not market_open:
-        if test_mode:
-            print(f"Market is closed (ET: {now_et.strftime('%H:%M')}). Running in TEST MODE using last trading day data.")
-            use_last_trading_day = True
-        else:
-            print(f"Market is closed (ET: {now_et.strftime('%H:%M')}). Using last trading day data for analysis.")
-            use_last_trading_day = True
+    # Only run if market is open or in test mode
+    if not market_open and not test_mode:
+        print(f"Market is closed (ET: {now_et.strftime('%H:%M')}). Skipping signal detection.")
+        # Output empty signals file
+        with open('signals.json', 'w') as f:
+            json.dump({
+                'timestamp': datetime.now().isoformat(),
+                'market_status': 'closed',
+                'data_source': 'none',
+                'signals': [],
+                'tickers_scanned': 0,
+                'message': 'Market closed - no signals generated'
+            }, f, indent=2)
+        return
+    
+    if test_mode and not market_open:
+        print(f"Market is closed (ET: {now_et.strftime('%H:%M')}). Running in TEST MODE using last trading day data.")
+        use_last_trading_day = True
     else:
         print(f"Market is OPEN (ET: {now_et.strftime('%H:%M')}). Using live data.")
         use_last_trading_day = False
+    
+    # Load previously sent signals
+    sent_signals = load_sent_signals()
     
     # Analyze each ticker
     detected_signals = []
@@ -340,33 +374,44 @@ def main():
         print(f"Analyzing {ticker}...")
         signal = fetch_and_analyze(ticker, use_last_trading_day)
         if signal:
-            detected_signals.append(signal)
-            print(f"  ✓ Signal detected: {signal['strategy']} @ ${signal['entry']:.2f}")
+            # Check if this signal was already sent
+            if not is_duplicate_signal(signal, sent_signals):
+                detected_signals.append(signal)
+                print(f"  ✓ New signal detected: {signal['strategy']} @ ${signal['entry']:.2f}")
+            else:
+                print(f"  ⚠ Duplicate signal skipped: {signal['strategy']} @ ${signal['entry']:.2f}")
     
-    # Send email if signals found
+    # Send email if new signals found
     if detected_signals:
-        print(f"\nFound {len(detected_signals)} signals!")
-        if not market_open:
-            print("Note: These signals are from the last trading day's closing data.")
+        print(f"\nFound {len(detected_signals)} new signals!")
         
         # Try to send email but don't fail the workflow
         try:
             if send_email_alert(detected_signals):
                 print("✓ Email alert sent successfully")
+                
+                # Mark signals as sent
+                timestamp = datetime.now().isoformat()
+                for signal in detected_signals:
+                    signal_id = generate_signal_id(signal)
+                    sent_signals[signal_id] = timestamp
+                
+                # Save updated sent signals
+                save_sent_signals(sent_signals)
             else:
                 print("⚠ Email alert failed - check logs")
         except Exception as e:
             print(f"⚠ Email error: {str(e)}")
             print("Continuing without email...")
     else:
-        print("\nNo signals detected.")
+        print("\nNo new signals detected.")
     
     # Output signals as JSON for workflow artifact
     with open('signals.json', 'w') as f:
         json.dump({
             'timestamp': datetime.now().isoformat(),
-            'market_status': 'open' if market_open else 'closed',
-            'data_source': 'live' if market_open else 'last_trading_day',
+            'market_status': 'open' if market_open else 'test_mode',
+            'data_source': 'live' if (market_open and not use_last_trading_day) else 'last_trading_day',
             'signals': detected_signals,
             'tickers_scanned': len(tickers)
         }, f, indent=2)

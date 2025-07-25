@@ -17,6 +17,8 @@ on:
 jobs:
   detect-signals:
     runs-on: ubuntu-latest
+    outputs:
+      market_open: ${{ steps.market_check.outputs.is_open }}
     
     steps:
     - name: Checkout code
@@ -59,8 +61,25 @@ jobs:
         print(f'Current ET time: {now_et.strftime(\"%Y-%m-%d %H:%M:%S %Z\")}')
         print(f'Market is {\"OPEN\" if is_market_hours else \"CLOSED\"}')"
     
+    - name: Market closed notification
+      if: steps.market_check.outputs.is_open == 'false' && github.event.inputs.test_mode != 'true'
+      run: |
+        echo "## Market Closed" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "The market is currently closed. Signal detection will resume during market hours (9:30 AM - 4:00 PM ET)." >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "**Next market open:** Monday-Friday 9:30 AM ET" >> $GITHUB_STEP_SUMMARY
+    
+    - name: Cache sent signals tracking
+      uses: actions/cache@v4
+      with:
+        path: sent_signals.json
+        key: ${{ runner.os }}-sent-signals-${{ github.run_id }}
+        restore-keys: |
+          ${{ runner.os }}-sent-signals-
+    
     - name: Run signal detector
-      if: always()  # Always run, let the script decide what to do
+      if: steps.market_check.outputs.is_open == 'true' || github.event.inputs.test_mode == 'true'
       env:
         GMAIL_USER: ${{ secrets.GMAIL_USER }}
         GMAIL_APP_PWD: ${{ secrets.GMAIL_APP_PWD }}
@@ -71,7 +90,7 @@ jobs:
         python signal_detector.py
     
     - name: Upload signal results
-      if: always()
+      if: steps.market_check.outputs.is_open == 'true' || github.event.inputs.test_mode == 'true'
       uses: actions/upload-artifact@v4
       with:
         name: signal-results
@@ -103,7 +122,7 @@ jobs:
   process-signals:
     needs: detect-signals
     runs-on: ubuntu-latest
-    if: success()
+    if: success() && (needs.detect-signals.outputs.market_open == 'true' || github.event.inputs.test_mode == 'true')
     
     steps:
     - name: Download signal results
