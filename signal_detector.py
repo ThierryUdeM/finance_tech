@@ -221,6 +221,7 @@ def send_email_alert(signals):
     import smtplib
     from email.mime.text import MIMEText
     from email.mime.multipart import MIMEMultipart
+    import pytz
     
     # Email configuration from environment/secrets
     gmail_user = os.environ.get('GMAIL_USER')
@@ -347,7 +348,16 @@ def main():
         print(f"\nFound {len(detected_signals)} signals!")
         if not market_open:
             print("Note: These signals are from the last trading day's closing data.")
-        send_email_alert(detected_signals)
+        
+        # Try to send email but don't fail the workflow
+        try:
+            if send_email_alert(detected_signals):
+                print("✓ Email alert sent successfully")
+            else:
+                print("⚠ Email alert failed - check logs")
+        except Exception as e:
+            print(f"⚠ Email error: {str(e)}")
+            print("Continuing without email...")
     else:
         print("\nNo signals detected.")
     
