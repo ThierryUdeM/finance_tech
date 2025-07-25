@@ -20,15 +20,15 @@ jobs:
     
     steps:
     - name: Checkout code
-      uses: actions/checkout@v3
+      uses: actions/checkout@v4
     
     - name: Set up Python
-      uses: actions/setup-python@v4
+      uses: actions/setup-python@v5
       with:
         python-version: '3.9'
     
     - name: Cache pip packages
-      uses: actions/cache@v3
+      uses: actions/cache@v4
       with:
         path: ~/.cache/pip
         key: ${{ runner.os }}-pip-${{ hashFiles('**/requirements.txt') }}
@@ -53,7 +53,9 @@ jobs:
             ((now_et.hour == 9 and now_et.minute >= 30) or 
              (now_et.hour > 9 and now_et.hour < 16))
         )
-        print(f'::set-output name=is_open::{str(is_market_hours).lower()}')
+        import os
+        with open(os.environ['GITHUB_OUTPUT'], 'a') as f:
+            f.write(f'is_open={str(is_market_hours).lower()}\\n')
         print(f'Current ET time: {now_et.strftime(\"%Y-%m-%d %H:%M:%S %Z\")}')
         print(f'Market is {\"OPEN\" if is_market_hours else \"CLOSED\"}')"
     
@@ -70,7 +72,7 @@ jobs:
     
     - name: Upload signal results
       if: always()
-      uses: actions/upload-artifact@v3
+      uses: actions/upload-artifact@v4
       with:
         name: signal-results
         path: signals.json
@@ -105,7 +107,7 @@ jobs:
     
     steps:
     - name: Download signal results
-      uses: actions/download-artifact@v3
+      uses: actions/download-artifact@v4
       with:
         name: signal-results
     
