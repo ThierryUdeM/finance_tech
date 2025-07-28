@@ -1,0 +1,223 @@
+name: Flexible Trading Signal Detector
+
+on:
+  schedule:
+    # Run every 15 minutes during market hours (9:30 AM - 4:00 PM ET)
+    # GitHub Actions uses UTC, so 9:30 AM - 4:00 PM ET is 2:30 PM - 9:00 PM UTC (during EST)
+    # or 1:30 PM - 8:00 PM UTC (during EDT)
+    - cron: '*/15 13-21 * * 1-5'  # Every 15 min, 1:30 PM - 9:00 PM UTC, Mon-Fri
+  
+  workflow_dispatch:  # Allow manual trigger
+    inputs:
+      test_mode:
+        description: 'Run in test mode'
+        required: false
+        default: 'false'
+      use_rigid_params:
+        description: 'Use rigid parameters instead of flexible'
+        required: false
+        default: 'false'
+
+jobs:
+  detect-signals:
+    runs-on: ubuntu-latest
+    outputs:
+      market_open: ${{ steps.market_check.outputs.is_open }}
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+    
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.9'
+    
+    - name: Cache pip packages
+      uses: actions/cache@v4
+      with:
+        path: ~/.cache/pip
+        key: ${{ runner.os }}-pip-${{ hashFiles('**/requirements.txt') }}
+        restore-keys: |
+          ${{ runner.os }}-pip-
+    
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install yfinance pandas numpy pytz
+    
+    - name: Check market hours
+      id: market_check
+      run: |
+        python -c "
+        import pytz
+        from datetime import datetime
+        et_tz = pytz.timezone('America/New_York')
+        now_et = datetime.now(et_tz)
+        is_market_hours = (
+            now_et.weekday() < 5 and  # Monday-Friday
+            ((now_et.hour == 9 and now_et.minute >= 30) or 
+             (now_et.hour > 9 and now_et.hour < 16))
+        )
+        import os
+        with open(os.environ['GITHUB_OUTPUT'], 'a') as f:
+            f.write(f'is_open={str(is_market_hours).lower()}\\n')
+        print(f'Current ET time: {now_et.strftime(\"%Y-%m-%d %H:%M:%S %Z\")}')
+        print(f'Market is {\"OPEN\" if is_market_hours else \"CLOSED\"}')"
+    
+    - name: Market closed notification
+      if: steps.market_check.outputs.is_open == 'false' && github.event.inputs.test_mode != 'true'
+      run: |
+        echo "## Market Closed" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "The market is currently closed. Signal detection will resume during market hours (9:30 AM - 4:00 PM ET)." >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "**Next market open:** Monday-Friday 9:30 AM ET" >> $GITHUB_STEP_SUMMARY
+    
+    - name: Cache sent signals tracking
+      uses: actions/cache@v4
+      with:
+        path: sent_signals.json
+        key: ${{ runner.os }}-sent-signals-flexible-${{ github.run_id }}
+        restore-keys: |
+          ${{ runner.os }}-sent-signals-flexible-
+          ${{ runner.os }}-sent-signals-
+    
+    - name: Run flexible signal detector
+      if: steps.market_check.outputs.is_open == 'true' || github.event.inputs.test_mode == 'true'
+      env:
+        GMAIL_USER: ${{ secrets.GMAIL_USER }}
+        GMAIL_APP_PWD: ${{ secrets.GMAIL_APP_PWD }}
+        ALERT_TO: ${{ secrets.ALERT_TO }}
+        TICKERS: ${{ secrets.TICKERS }}
+        TEST_MODE: ${{ github.event.inputs.test_mode }}
+      run: |
+        if [ "${{ github.event.inputs.use_rigid_params }}" == "true" ]; then
+          echo "Running with RIGID parameters..."
+          python organized/utils/signal_detector.py
+        else
+          echo "Running with FLEXIBLE parameters..."
+          python organized/utils/flexible_signal_detector.py
+        fi
+    
+    - name: Upload signal results
+      if: steps.market_check.outputs.is_open == 'true' || github.event.inputs.test_mode == 'true'
+      uses: actions/upload-artifact@v4
+      with:
+        name: signal-results
+        path: signals.json
+        retention-days: 7
+    
+    - name: Signal summary
+      if: steps.market_check.outputs.is_open == 'true' || github.event.inputs.test_mode == 'true'
+      run: |
+        if [ -f signals.json ]; then
+          echo "## Signal Detection Results" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          python -c "
+          import json
+          with open('signals.json', 'r') as f:
+              data = json.load(f)
+          print(f\"**Timestamp:** {data['timestamp']}\")
+          print(f\"**Mode:** {data.get('mode', 'unknown').replace('_', ' ').title()}\")
+          print(f\"**Tickers Scanned:** {data['tickers_scanned']}\")
+          print(f\"**Signals Found:** {len(data['signals'])}\")
+          print()
+          if data['signals']:
+              print('### Detected Signals:')
+              for s in data['signals']:
+                  strategy = s['strategy']
+                  confidence = s['confidence']
+                  entry = s['entry']
+                  regime = s.get('regime', 'N/A')
+                  rr = abs(s['target'] - s['entry']) / abs(s['entry'] - s['stop'])
+                  
+                  print(f\"- **{s['ticker']}** - {strategy} @ \${entry:.2f}\")
+                  print(f\"  - Confidence: {confidence}%\")
+                  print(f\"  - R:R Ratio: {rr:.2f}\")
+                  print(f\"  - Market Regime: {regime}\")
+                  print()
+          " >> $GITHUB_STEP_SUMMARY
+        fi
+
+  # Optional: Compare flexible vs rigid parameters
+  compare-parameters:
+    needs: detect-signals
+    runs-on: ubuntu-latest
+    if: github.event_name == 'workflow_dispatch' && github.event.inputs.test_mode == 'true'
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+    
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.9'
+    
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install yfinance pandas numpy pytz
+    
+    - name: Run comparison
+      env:
+        TICKERS: ${{ secrets.TICKERS }}
+        TEST_MODE: 'true'
+      run: |
+        echo "## Parameter Comparison" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        
+        # Run rigid parameters
+        echo "Running RIGID parameters..."
+        python organized/utils/signal_detector.py
+        mv signals.json signals_rigid.json
+        
+        # Run flexible parameters
+        echo "Running FLEXIBLE parameters..."
+        python organized/utils/flexible_signal_detector.py
+        mv signals.json signals_flexible.json
+        
+        # Compare results
+        python -c "
+        import json
+        
+        with open('signals_rigid.json', 'r') as f:
+            rigid = json.load(f)
+        with open('signals_flexible.json', 'r') as f:
+            flexible = json.load(f)
+        
+        print('### Comparison Results')
+        print()
+        print(f\"**Rigid Parameters:** {len(rigid['signals'])} signals\")
+        print(f\"**Flexible Parameters:** {len(flexible['signals'])} signals\")
+        print()
+        
+        # Find unique signals
+        rigid_sigs = {(s['ticker'], s['strategy'].replace('_Flexible', '')) for s in rigid['signals']}
+        flex_sigs = {(s['ticker'], s['strategy'].replace('_Flexible', '')) for s in flexible['signals']}
+        
+        unique_to_flexible = flex_sigs - rigid_sigs
+        unique_to_rigid = rigid_sigs - flex_sigs
+        
+        if unique_to_flexible:
+            print('#### Signals only found with flexible parameters:')
+            for ticker, strategy in unique_to_flexible:
+                print(f\"- {ticker}: {strategy}\")
+            print()
+        
+        if unique_to_rigid:
+            print('#### Signals only found with rigid parameters:')
+            for ticker, strategy in unique_to_rigid:
+                print(f\"- {ticker}: {strategy}\")
+            print()
+        
+        # Average confidence comparison
+        if rigid['signals']:
+            avg_conf_rigid = sum(s['confidence'] for s in rigid['signals']) / len(rigid['signals'])
+            print(f\"**Average Confidence (Rigid):** {avg_conf_rigid:.1f}%\")
+        
+        if flexible['signals']:
+            avg_conf_flex = sum(s['confidence'] for s in flexible['signals']) / len(flexible['signals'])
+            print(f\"**Average Confidence (Flexible):** {avg_conf_flex:.1f}%\")
+        " >> $GITHUB_STEP_SUMMARY

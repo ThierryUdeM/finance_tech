@@ -1,4 +1,4 @@
-name: Trading Signal Detector
+name: Trading Signal Detector (Rigid Parameters)
 
 on:
   schedule:
@@ -87,6 +87,7 @@ jobs:
         TICKERS: ${{ secrets.TICKERS }}
         TEST_MODE: ${{ github.event.inputs.test_mode }}
       run: |
+        echo "Running RIGID parameters signal detector..."
         python signal_detector.py
     
     - name: Upload signal results

@@ -1,0 +1,232 @@
+name: ML Enhanced Trading Signal Detector
+
+on:
+  schedule:
+    # Run every 30 minutes during market hours (requires more compute time for ML)
+    - cron: '0,30 13-21 * * 1-5'  # Every 30 min, 1:30 PM - 9:00 PM UTC, Mon-Fri
+  
+  workflow_dispatch:  # Allow manual trigger
+    inputs:
+      test_mode:
+        description: 'Run in test mode'
+        required: false
+        default: 'false'
+      use_ml:
+        description: 'Enable ML forecasting'
+        required: false
+        default: 'true'
+      model_type:
+        description: 'ML model type (transformer, deepar, nhits)'
+        required: false
+        default: 'transformer'
+
+jobs:
+  detect-ml-signals:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30  # ML models need more time
+    outputs:
+      market_open: ${{ steps.market_check.outputs.is_open }}
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+    
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.9'
+    
+    - name: Cache pip packages
+      uses: actions/cache@v4
+      with:
+        path: ~/.cache/pip
+        key: ${{ runner.os }}-ml-pip-${{ hashFiles('**/requirements*.txt') }}
+        restore-keys: |
+          ${{ runner.os }}-ml-pip-
+    
+    - name: Cache ML models
+      uses: actions/cache@v4
+      with:
+        path: |
+          ~/.cache/torch
+          ./models/
+        key: ${{ runner.os }}-ml-models-${{ github.run_id }}
+        restore-keys: |
+          ${{ runner.os }}-ml-models-
+    
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        
+        # Install basic requirements first
+        pip install -r requirements_actions.txt
+        
+        # Install ML requirements with error handling
+        echo "Installing ML dependencies..."
+        pip install torch --index-url https://download.pytorch.org/whl/cpu
+        pip install transformers>=4.30.0
+        
+        # Try to install optional ML libraries
+        pip install 'darts[torch]' || echo "Darts installation failed, using basic models"
+        pip install gluonts mxnet || echo "GluonTS installation failed, DeepAR unavailable"
+        
+        # Install remaining requirements
+        pip install scikit-learn matplotlib seaborn plotly joblib tqdm
+        
+        echo "Dependencies installed successfully"
+    
+    - name: Check market hours
+      id: market_check
+      run: |
+        python -c "
+        import pytz
+        from datetime import datetime
+        et_tz = pytz.timezone('America/New_York')
+        now_et = datetime.now(et_tz)
+        is_market_hours = (
+            now_et.weekday() < 5 and  # Monday-Friday
+            ((now_et.hour == 9 and now_et.minute >= 30) or 
+             (now_et.hour > 9 and now_et.hour < 16))
+        )
+        import os
+        with open(os.environ['GITHUB_OUTPUT'], 'a') as f:
+            f.write(f'is_open={str(is_market_hours).lower()}\\n')
+        print(f'Current ET time: {now_et.strftime(\"%Y-%m-%d %H:%M:%S %Z\")}')
+        print(f'Market is {\"OPEN\" if is_market_hours else \"CLOSED\"}')"
+    
+    - name: Market closed notification
+      if: steps.market_check.outputs.is_open == 'false' && github.event.inputs.test_mode != 'true'
+      run: |
+        echo "## Market Closed" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "The market is currently closed. ML-enhanced signal detection will resume during market hours (9:30 AM - 4:00 PM ET)." >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "**Next market open:** Monday-Friday 9:30 AM ET" >> $GITHUB_STEP_SUMMARY
+    
+    - name: Cache sent signals tracking
+      if: steps.market_check.outputs.is_open == 'true' || github.event.inputs.test_mode == 'true'
+      uses: actions/cache@v4
+      with:
+        path: sent_signals.json
+        key: ${{ runner.os }}-sent-signals-ml-${{ github.run_id }}
+        restore-keys: |
+          ${{ runner.os }}-sent-signals-ml-
+          ${{ runner.os }}-sent-signals-
+    
+    - name: Create models directory
+      if: steps.market_check.outputs.is_open == 'true' || github.event.inputs.test_mode == 'true'
+      run: |
+        mkdir -p models
+    
+    - name: Run ML-enhanced signal detector
+      if: steps.market_check.outputs.is_open == 'true' || github.event.inputs.test_mode == 'true'
+      env:
+        GMAIL_USER: ${{ secrets.GMAIL_USER }}
+        GMAIL_APP_PWD: ${{ secrets.GMAIL_APP_PWD }}
+        ALERT_TO: ${{ secrets.ALERT_TO }}
+        TICKERS: ${{ secrets.TICKERS }}
+        TEST_MODE: ${{ github.event.inputs.test_mode }}
+        USE_ML: ${{ github.event.inputs.use_ml }}
+        MODEL_TYPE: ${{ github.event.inputs.model_type }}
+      run: |
+        echo "Running ML-enhanced signal detection..."
+        echo "ML enabled: ${USE_ML:-true}"
+        echo "Model type: ${MODEL_TYPE:-transformer}"
+        
+        # Run the enhanced detector
+        python enhanced_signal_detector.py
+    
+    - name: Upload enhanced signal results
+      if: steps.market_check.outputs.is_open == 'true' || github.event.inputs.test_mode == 'true'
+      uses: actions/upload-artifact@v4
+      with:
+        name: enhanced-signal-results
+        path: |
+          enhanced_signals.json
+          signals.json
+        retention-days: 7
+    
+    - name: Enhanced signal summary
+      if: steps.market_check.outputs.is_open == 'true' || github.event.inputs.test_mode == 'true'
+      run: |
+        if [ -f enhanced_signals.json ]; then
+          echo "## ML-Enhanced Signal Detection Results" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          python -c "
+          import json
+          with open('enhanced_signals.json', 'r') as f:
+              data = json.load(f)
+          
+          print(f\"**Timestamp:** {data['timestamp']}\")
+          print(f\"**Tickers Scanned:** {data['tickers_scanned']}\")
+          print(f\"**ML Enabled:** {data['ml_enabled']}\")
+          print(f\"**Total Signals:** {len(data['signals'])}\")
+          print()
+          
+          if data['ml_enabled'] and 'signal_breakdown' in data:
+              breakdown = data['signal_breakdown']
+              print(f\"**Traditional Signals:** {breakdown['technical']}\")
+              print(f\"**ML-Enhanced Signals:** {breakdown['ml_enhanced']}\")
+              print()
+          
+          if data['signals']:
+              print('### Detected Signals:')
+              for s in data['signals']:
+                  signal_type = s.get('signal_type', 'technical').upper()
+                  strategy = s['strategy']
+                  confidence = s['confidence']
+                  entry = s['entry']
+                  
+                  print(f\"- **{s['ticker']}** [{signal_type}] - {strategy} @ \${entry:.2f} (Confidence: {confidence}%)\")
+                  
+                  # Show ML prediction if available
+                  if 'predicted_price' in s:
+                      time_horizon = s.get('time_horizon', 'unknown')
+                      predicted = s['predicted_price']
+                      print(f\"  *ML predicts \${predicted:.2f} in {time_horizon}*\")
+          " >> $GITHUB_STEP_SUMMARY
+        fi
+
+  # Optional: Advanced ML model training job (runs weekly)
+  train-ml-models:
+    runs-on: ubuntu-latest
+    # Only run on manual trigger or weekly schedule
+    if: github.event_name == 'workflow_dispatch' || (github.event.schedule == '0 2 * * 1')
+    needs: detect-ml-signals
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+    
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.9'
+    
+    - name: Install ML dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install torch --index-url https://download.pytorch.org/whl/cpu
+        pip install 'darts[torch]' transformers gluonts mxnet
+        pip install pandas numpy scikit-learn yfinance
+    
+    - name: Train ML models
+      run: |
+        echo "Training ML models for improved predictions..."
+        python -c "
+        from timeseries_predictor import TradingSignalForecaster
+        import os
+        
+        # Train models for all tickers
+        forecaster = TradingSignalForecaster()
+        forecaster.train_all_models(model_type='transformer')
+        
+        print('ML model training completed!')
+        "
+    
+    - name: Save trained models
+      uses: actions/upload-artifact@v4
+      with:
+        name: trained-ml-models
+        path: models/
+        retention-days: 30
