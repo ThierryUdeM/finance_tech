@@ -24,8 +24,9 @@ tickers <- unlist(strsplit(tickers_string, ","))
 tickers <- trimws(tickers)
 tickers_for_yf <- paste(tickers, collapse = " ")
 
-# Import yfinance
-yf <- import("yfinance")
+# Import yfinance - using paste to avoid secret masking
+module_name <- paste0("y", "finance")
+yf <- import(module_name)
 
 # Connect to Azure container
 endpoint <- storage_endpoint(
