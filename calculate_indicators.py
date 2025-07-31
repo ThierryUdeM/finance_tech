@@ -209,13 +209,13 @@ def main():
     hourly_data = load_data_from_azure(container_client, "raw_data/raw_data_1h.parquet")
     if hourly_data is not None:
         hourly_with_indicators = calculate_hourly_indicators(hourly_data)
-        save_data_to_azure(container_client, hourly_with_indicators, "indicators/data_feed_1h.parquet")
+        save_data_to_azure(container_client, hourly_with_indicators, "indicators_azure/data_feed_1h.parquet")
         
         # Also update historic
         historic_hourly = load_data_from_azure(container_client, "raw_data/historic_raw_data_1h.parquet")
         if historic_hourly is not None:
             historic_hourly_indicators = calculate_hourly_indicators(historic_hourly)
-            save_data_to_azure(container_client, historic_hourly_indicators, "indicators/historic_data_feed_1h.parquet")
+            save_data_to_azure(container_client, historic_hourly_indicators, "indicators_azure/historic_data_feed_1h.parquet")
     
     # Process daily data (daily indicators)
     print("\n" + "="*60)
@@ -224,13 +224,13 @@ def main():
     daily_data = load_data_from_azure(container_client, "raw_data/raw_data_1d.parquet")
     if daily_data is not None:
         daily_with_indicators = calculate_daily_indicators(daily_data)
-        save_data_to_azure(container_client, daily_with_indicators, "indicators/data_feed_1d.parquet")
+        save_data_to_azure(container_client, daily_with_indicators, "indicators_azure/data_feed_1d.parquet")
         
         # Also update historic
         historic_daily = load_data_from_azure(container_client, "raw_data/historic_raw_data_1d.parquet")
         if historic_daily is not None:
             historic_daily_indicators = calculate_daily_indicators(historic_daily)
-            save_data_to_azure(container_client, historic_daily_indicators, "indicators/historic_data_feed_1d.parquet")
+            save_data_to_azure(container_client, historic_daily_indicators, "indicators_azure/historic_data_feed_1d.parquet")
     
     print("\nIndicator calculation completed.")
 

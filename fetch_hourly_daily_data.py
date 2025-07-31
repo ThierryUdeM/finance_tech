@@ -185,6 +185,16 @@ def main():
     except Exception as e:
         print(f"Error calculating indicators: {str(e)}")
         print("Indicators calculation failed but data fetch was successful.")
+    
+    # Run advanced pattern detection
+    print("\n" + "="*60)
+    print("Running advanced pattern detection...")
+    try:
+        from advanced_patterns import main as advanced_patterns_main
+        advanced_patterns_main()
+    except Exception as e:
+        print(f"Error detecting patterns: {str(e)}")
+        print("Pattern detection failed but data fetch and indicators were successful.")
 
 if __name__ == "__main__":
     main()

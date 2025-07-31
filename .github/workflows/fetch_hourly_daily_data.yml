@@ -38,5 +38,8 @@ jobs:
         STORAGE_ACCOUNT_NAME: ${{ secrets.STORAGE_ACCOUNT_NAME }}
         CONTAINER_NAME: ${{ secrets.CONTAINER_NAME }}
         ACCESS_KEY: ${{ secrets.ACCESS_KEY }}
+        GMAIL_USER: ${{ secrets.GMAIL_USER }}
+        GMAIL_APP_PWD: ${{ secrets.GMAIL_APP_PWD }}
+        ALERT_TO: ${{ secrets.ALERT_TO }}
       run: |
         python fetch_hourly_daily_data.py

@@ -425,9 +425,9 @@ save_indicators_to_azure <- function(data, interval_name) {
     temp_file <- tempfile(fileext = ".parquet")
     write_parquet(data, temp_file)
     
-    # Define blob names in indicators folder
-    current_blob_name <- paste0("indicators/data_feed_", interval_name, ".parquet")
-    historic_blob_name <- paste0("indicators/historic_data_feed_", interval_name, ".parquet")
+    # Define blob names in indicators_azure folder
+    current_blob_name <- paste0("indicators_azure/data_feed_", interval_name, ".parquet")
+    historic_blob_name <- paste0("indicators_azure/historic_data_feed_", interval_name, ".parquet")
     
     tryCatch({
       # Upload current data with indicators

@@ -9,6 +9,12 @@ This repository contains GitHub Actions that fetch stock market data at differen
 - **Technical Indicators**: Automatically calculates indicators after data fetch
   - Intraday indicators for 1min/5min data (EMA, SMA, RSI, VWAP, Bollinger Bands, etc.)
   - Daily indicators for hourly/daily data (20/50/100/200 SMA/EMA, MACD, ATR, etc.)
+- **Advanced Pattern Detection**: Identifies trading patterns with email alerts
+  - Trend continuation patterns (Golden Cross, EMA Bounce)
+  - Breakout patterns (NR7, 52-week high, Gap-and-Go)
+  - Mean reversion patterns (Bollinger Band pierce, Over-extension)
+  - Reversal patterns (Hammer at key MAs, Engulfing patterns)
+  - Volume confirmation for all patterns
 - Runs automatically on schedule or can be triggered manually
 - Stores data in Azure Blob Storage in Parquet format
 - Handles market hours and trading days automatically
@@ -23,6 +29,9 @@ This repository contains GitHub Actions that fetch stock market data at differen
    - `STORAGE_ACCOUNT_NAME`: Your Azure storage account name
    - `CONTAINER_NAME`: Azure container name (default: `finance`)
    - `ACCESS_KEY`: Azure storage account access key
+   - `GMAIL_USER`: Gmail address for sending alerts
+   - `GMAIL_APP_PWD`: Gmail app-specific password
+   - `ALERT_TO`: Email address to receive alerts
 
 3. The workflow will run automatically during market hours or can be triggered manually
 
@@ -52,7 +61,7 @@ raw_data/                          # Raw OHLCV data
 ├── historic_raw_data_1h.parquet   # Cumulative historic hourly data
 └── historic_raw_data_1d.parquet   # Cumulative historic daily data
 
-indicators/                        # Data with technical indicators
+indicators_azure/                  # Data with technical indicators
 ├── data_feed_1min.parquet        # Current 1-minute data with indicators
 ├── data_feed_5min.parquet        # Current 5-minute data with indicators
 ├── data_feed_1h.parquet          # Current hourly data with indicators
@@ -61,6 +70,10 @@ indicators/                        # Data with technical indicators
 ├── historic_data_feed_5min.parquet # Historic 5-minute with indicators
 ├── historic_data_feed_1h.parquet   # Historic hourly with indicators
 └── historic_data_feed_1d.parquet   # Historic daily with indicators
+
+patterns/                          # Detected trading patterns
+├── advanced_patterns_latest.parquet      # Latest pattern detections
+└── advanced_patterns_YYYYMMDD_HHMMSS.parquet # Timestamped pattern history
 ```
 
 Each Parquet file contains:
