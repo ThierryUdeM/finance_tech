@@ -24,13 +24,6 @@ tickers <- unlist(strsplit(tickers_string, ","))
 tickers <- trimws(tickers)
 tickers_for_yf <- paste(tickers, collapse = " ")
 
-# Set up Python environment with virtual environment
-virtualenv_create("r-reticulate", python = "/usr/bin/python3")
-use_virtualenv("r-reticulate", required = TRUE)
-
-# Install required packages
-py_install(c("yfinance", "pandas", "numpy"), envname = "r-reticulate", pip = TRUE)
-
 # Import yfinance
 yf <- import("yfinance")
 
