@@ -161,21 +161,50 @@ save_to_azure <- function(combined_data, interval_name) {
     temp_file <- tempfile(fileext = ".parquet")
     write_parquet(combined_data, temp_file)
     
-    # Generate blob name with timestamp
-    current_timestamp <- format(Sys.time(), "%Y%m%d_%H%M%S")
-    blob_name <- paste0("raw_data/raw_data_", interval_name, "_", current_timestamp, ".parquet")
-    
-    # Also save a "latest" version for easy access
-    latest_blob_name <- paste0("raw_data/raw_data_", interval_name, "_latest.parquet")
+    # Define blob names
+    current_blob_name <- paste0("raw_data/raw_data_", interval_name, ".parquet")
+    historic_blob_name <- paste0("raw_data/historic_raw_data_", interval_name, ".parquet")
     
     tryCatch({
-      # Upload timestamped version
-      storage_upload(container, temp_file, blob_name)
-      cat("Uploaded", interval_name, "data to Azure:", blob_name, "\n")
+      # Upload current data (overwrites existing)
+      storage_upload(container, temp_file, current_blob_name)
+      cat("Uploaded current", interval_name, "data to:", current_blob_name, "\n")
       
-      # Upload latest version (overwrites existing)
-      storage_upload(container, temp_file, latest_blob_name)
-      cat("Updated latest", interval_name, "data:", latest_blob_name, "\n")
+      # Handle historic data
+      # First, try to download existing historic data
+      historic_exists <- tryCatch({
+        temp_historic <- tempfile(fileext = ".parquet")
+        storage_download(container, src = historic_blob_name, dest = temp_historic)
+        TRUE
+      }, error = function(e) {
+        FALSE
+      })
+      
+      if (historic_exists) {
+        # Read existing historic data
+        existing_historic <- read_parquet(temp_historic)
+        
+        # Remove any existing data for today
+        today_date <- as.Date(last_trading_day)
+        existing_historic_clean <- existing_historic[as.Date(existing_historic$datetime) != today_date, ]
+        
+        # Combine with today's new data
+        updated_historic <- rbind(existing_historic_clean, combined_data)
+        
+        # Write and upload updated historic data
+        temp_updated_historic <- tempfile(fileext = ".parquet")
+        write_parquet(updated_historic, temp_updated_historic)
+        storage_upload(container, temp_updated_historic, historic_blob_name)
+        cat("Updated historic", interval_name, "data with", nrow(combined_data), "new records\n")
+        
+        # Clean up temp files
+        unlink(temp_historic)
+        unlink(temp_updated_historic)
+      } else {
+        # No existing historic data, create new
+        storage_upload(container, temp_file, historic_blob_name)
+        cat("Created new historic", interval_name, "data file with", nrow(combined_data), "records\n")
+      }
       
       cat("Total records:", nrow(combined_data), "\n")
       cat("Date range:", min(combined_data$datetime), "to", max(combined_data$datetime), "\n")

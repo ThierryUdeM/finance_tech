@@ -27,10 +27,10 @@ This GitHub Action fetches stock market data every minute during market hours an
 Data is saved in the Azure container with the following structure:
 ```
 raw_data/
-├── raw_data_1min_YYYYMMDD_HHMMSS.parquet  # Timestamped 1-minute data
-├── raw_data_1min_latest.parquet           # Latest 1-minute data
-├── raw_data_5min_YYYYMMDD_HHMMSS.parquet  # Timestamped 5-minute data
-└── raw_data_5min_latest.parquet           # Latest 5-minute data
+├── raw_data_1min.parquet          # Current day's 1-minute data (overwrites daily)
+├── raw_data_5min.parquet          # Current day's 5-minute data (overwrites daily)
+├── historic_raw_data_1min.parquet # Cumulative historic 1-minute data
+└── historic_raw_data_5min.parquet # Cumulative historic 5-minute data
 ```
 
 Each Parquet file contains:
