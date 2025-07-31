@@ -47,8 +47,8 @@ jobs:
     - name: Run data fetching script
       env:
         TICKERS: ${{ secrets.TICKERS }}
-        AZURE_STORAGE_ACCOUNT: ${{ secrets.AZURE_STORAGE_ACCOUNT }}
-        AZURE_CONTAINER_NAME: ${{ secrets.AZURE_CONTAINER_NAME }}
-        AZURE_SAS_TOKEN: ${{ secrets.AZURE_SAS_TOKEN }}
+        STORAGE_ACCOUNT_NAME: ${{ secrets.STORAGE_ACCOUNT_NAME }}
+        CONTAINER_NAME: ${{ secrets.CONTAINER_NAME }}
+        ACCESS_KEY: ${{ secrets.ACCESS_KEY }}
       run: |
         Rscript raw_data.R

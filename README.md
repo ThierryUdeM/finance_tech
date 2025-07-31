@@ -16,9 +16,9 @@ This GitHub Action fetches stock market data every minute during market hours an
 
 2. Add the following GitHub Secrets in your repository settings:
    - `TICKERS`: Comma-separated list of stock tickers (e.g., `AAPL,MSFT,GOOGL`)
-   - `AZURE_STORAGE_ACCOUNT`: Your Azure storage account name
-   - `AZURE_CONTAINER_NAME`: Azure container name (default: `finance`)
-   - `AZURE_SAS_TOKEN`: SAS token with write permissions to the container
+   - `STORAGE_ACCOUNT_NAME`: Your Azure storage account name
+   - `CONTAINER_NAME`: Azure container name (default: `finance`)
+   - `ACCESS_KEY`: Azure storage account access key
 
 3. The workflow will run automatically during market hours or can be triggered manually
 

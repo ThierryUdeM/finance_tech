@@ -11,11 +11,11 @@ if (tickers_string == "") {
   stop("TICKERS environment variable not found.")
 }
 
-azure_account <- Sys.getenv("AZURE_STORAGE_ACCOUNT")
-azure_container <- Sys.getenv("AZURE_CONTAINER_NAME")
-azure_sas <- Sys.getenv("AZURE_SAS_TOKEN")
+azure_account <- Sys.getenv("STORAGE_ACCOUNT_NAME")
+azure_container <- Sys.getenv("CONTAINER_NAME")
+azure_key <- Sys.getenv("ACCESS_KEY")
 
-if (azure_account == "" || azure_container == "" || azure_sas == "") {
+if (azure_account == "" || azure_container == "" || azure_key == "") {
   stop("Azure credentials not found in environment variables.")
 }
 
@@ -30,7 +30,7 @@ yf <- import("yfinance")
 # Connect to Azure container
 endpoint <- storage_endpoint(
   paste0("https://", azure_account, ".blob.core.windows.net"),
-  sas = azure_sas
+  key = azure_key
 )
 container <- storage_container(endpoint, azure_container)
 
