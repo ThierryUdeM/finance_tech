@@ -4,6 +4,8 @@ library(arrow)
 library(readr)
 library(lubridate)
 library(AzureStor)
+library(TTR)
+library(zoo)
 
 # Get environment variables
 tickers_string <- Sys.getenv("TICKERS")
@@ -237,3 +239,263 @@ data_5min <- fetch_and_process_data("5-minute", "5m")
 save_to_azure(data_5min, "5min")
 
 cat("Data fetching completed for both intervals.\n")
+
+# Calculate intraday indicators
+cat("\n", paste(rep("=", 60), collapse = ""), "\n")
+cat("Calculating intraday indicators...\n")
+
+# Function to calculate intraday indicators
+calculate_intraday_indicators <- function(data) {
+  # Ensure data is sorted by datetime
+  data <- data[order(data$ticker, data$datetime), ]
+  
+  if (!inherits(data$datetime, "POSIXct")) {
+    data$datetime <- as.POSIXct(data$datetime)
+  }
+  
+  # Add date column for grouping
+  data$date <- as.Date(data$datetime)
+  
+  # Price levels & ranges (session-specific, reset daily)
+  data <- data %>%
+    group_by(ticker, date) %>%
+    mutate(opening_price = first(open)) %>%
+    ungroup()
+  
+  # Prior close
+  data <- data %>%
+    group_by(ticker) %>%
+    mutate(prior_close = lag(close, 1)) %>%
+    ungroup()
+  
+  # Running HOD/LOD with daily reset
+  data <- data %>%
+    group_by(ticker, date) %>%
+    mutate(
+      running_hod = cummax(high),
+      running_lod = cummin(low)
+    ) %>%
+    ungroup()
+  
+  # Opening Range High & Low (first 3 bars for 15-minute ORB on 5-min data)
+  data <- data %>%
+    group_by(ticker, date) %>%
+    mutate(
+      or_high = max(high[1:min(3, n())]),
+      or_low = min(low[1:min(3, n())])
+    ) %>%
+    ungroup()
+  
+  # Trend Moving Averages
+  data <- data %>%
+    group_by(ticker) %>%
+    mutate(
+      ema_9 = if(n() >= 9) EMA(close, n = 9) else NA,
+      ema_20 = if(n() >= 20) EMA(close, n = 20) else NA,
+      sma_5 = if(n() >= 5) SMA(close, n = 5) else NA,
+      sma_20 = if(n() >= 20) SMA(close, n = 20) else NA
+    ) %>%
+    ungroup()
+  
+  # Momentum
+  data <- data %>%
+    group_by(ticker) %>%
+    mutate(
+      rsi_14 = if(n() >= 14) RSI(close, n = 14) else NA,
+      rsi_slope = c(NA, diff(rsi_14))
+    ) %>%
+    ungroup()
+  
+  # Volatility / Range
+  data <- data %>%
+    group_by(ticker) %>%
+    mutate(
+      true_range = high - low
+    ) %>%
+    ungroup()
+  
+  # ATR calculation per ticker
+  for (ticker_name in unique(data$ticker)) {
+    ticker_mask <- data$ticker == ticker_name
+    ticker_data <- data[ticker_mask, ]
+    
+    if (nrow(ticker_data) >= 14) {
+      atr_result <- ATR(cbind(ticker_data$high, ticker_data$low, ticker_data$close), n = 14)
+      data$atr_14[ticker_mask] <- atr_result[, "atr"]
+    } else {
+      data$atr_14[ticker_mask] <- NA
+    }
+  }
+  
+  # NR4 / NR7
+  data <- data %>%
+    mutate(range = high - low) %>%
+    group_by(ticker) %>%
+    mutate(
+      nr4 = if(n() >= 4) rollapply(range, width = 4, FUN = function(x) x[4] == min(x), align = "right", fill = NA) else NA,
+      nr7 = if(n() >= 7) rollapply(range, width = 7, FUN = function(x) x[7] == min(x), align = "right", fill = NA) else NA
+    ) %>%
+    ungroup()
+  
+  # Bollinger Bands per ticker
+  for (ticker_name in unique(data$ticker)) {
+    ticker_mask <- data$ticker == ticker_name
+    ticker_data <- data[ticker_mask, ]
+    
+    if (nrow(ticker_data) >= 20) {
+      bb <- BBands(ticker_data$close, n = 20, sd = 2)
+      data$bb_upper[ticker_mask] <- bb[, "up"]
+      data$bb_middle[ticker_mask] <- bb[, "mavg"]
+      data$bb_lower[ticker_mask] <- bb[, "dn"]
+      data$bb_pctb[ticker_mask] <- bb[, "pctB"]
+    } else {
+      data$bb_upper[ticker_mask] <- NA
+      data$bb_middle[ticker_mask] <- NA
+      data$bb_lower[ticker_mask] <- NA
+      data$bb_pctb[ticker_mask] <- NA
+    }
+  }
+  
+  data$bb_pierce <- (data$close > data$bb_upper) | (data$close < data$bb_lower)
+  data$bb_pierce[is.na(data$bb_upper)] <- FALSE
+  
+  # Volume metrics
+  data <- data %>%
+    group_by(ticker) %>%
+    mutate(
+      avg_volume_20 = if(n() >= 20) SMA(volume, n = 20) else NA,
+      volume_spike_ratio = volume / avg_volume_20,
+      obv = OBV(close, volume)
+    ) %>%
+    ungroup()
+  
+  # Intraday VWAP (reset daily)
+  data <- data %>%
+    group_by(ticker, date) %>%
+    mutate(
+      typical_price = (high + low + close) / 3,
+      vwap = cumsum(typical_price * volume) / cumsum(volume)
+    ) %>%
+    ungroup() %>%
+    select(-typical_price)
+  
+  # Gap metric
+  data$gap_pct <- ifelse(!is.na(data$prior_close), 
+                         (data$open - data$prior_close) / data$prior_close * 100, 
+                         NA)
+  
+  # Price-action flags
+  data <- data %>%
+    group_by(ticker) %>%
+    mutate(
+      inside_bar = high <= lag(high) & low >= lag(low)
+    ) %>%
+    ungroup()
+  
+  # Hammer detection
+  body <- abs(data$close - data$open)
+  lower_shadow <- abs(ifelse(data$close >= data$open, data$open - data$low, data$close - data$low))
+  upper_shadow <- abs(ifelse(data$close >= data$open, data$high - data$close, data$high - data$open))
+  data$hammer <- (lower_shadow > 2 * body) & (upper_shadow < 0.5 * body)
+  
+  # Engulfing pattern
+  data <- data %>%
+    group_by(ticker) %>%
+    mutate(
+      bull_engulf = (close > open) & 
+                    (lag(close) < lag(open)) & 
+                    (close > lag(open)) & 
+                    (open < lag(close)),
+      bear_engulf = (close < open) & 
+                    (lag(close) > lag(open)) & 
+                    (close < lag(open)) & 
+                    (open > lag(close)),
+      engulfing = bull_engulf | bear_engulf
+    ) %>%
+    select(-bull_engulf, -bear_engulf) %>%
+    ungroup()
+  
+  return(data)
+}
+
+# Function to save indicators data to Azure
+save_indicators_to_azure <- function(data, interval_name) {
+  if (nrow(data) > 0) {
+    # Create temporary file
+    temp_file <- tempfile(fileext = ".parquet")
+    write_parquet(data, temp_file)
+    
+    # Define blob names in indicators folder
+    current_blob_name <- paste0("indicators/data_feed_", interval_name, ".parquet")
+    historic_blob_name <- paste0("indicators/historic_data_feed_", interval_name, ".parquet")
+    
+    tryCatch({
+      # Upload current data with indicators
+      storage_upload(container, temp_file, current_blob_name)
+      cat("Uploaded indicators data to:", current_blob_name, "\n")
+      
+      # Handle historic data with indicators
+      # First, try to download existing historic indicators data
+      historic_exists <- tryCatch({
+        temp_historic <- tempfile(fileext = ".parquet")
+        storage_download(container, src = historic_blob_name, dest = temp_historic)
+        TRUE
+      }, error = function(e) {
+        FALSE
+      })
+      
+      if (historic_exists) {
+        # Read existing historic indicators data
+        existing_historic <- read_parquet(temp_historic)
+        
+        # Remove any existing data for today
+        today_date <- as.Date(last_trading_day)
+        existing_historic_clean <- existing_historic[as.Date(existing_historic$datetime) != today_date, ]
+        
+        # Combine with today's new indicators data
+        updated_historic <- rbind(existing_historic_clean, data)
+        
+        # Write and upload updated historic indicators data
+        temp_updated_historic <- tempfile(fileext = ".parquet")
+        write_parquet(updated_historic, temp_updated_historic)
+        storage_upload(container, temp_updated_historic, historic_blob_name)
+        cat("Updated historic indicators data with", nrow(data), "new records\n")
+        
+        # Clean up temp files
+        unlink(temp_historic)
+        unlink(temp_updated_historic)
+      } else {
+        # No existing historic indicators data, create new
+        storage_upload(container, temp_file, historic_blob_name)
+        cat("Created new historic indicators data file with", nrow(data), "records\n")
+      }
+      
+      cat("Total records with indicators:", nrow(data), "\n")
+      
+    }, error = function(e) {
+      cat("Error uploading indicators to Azure:", e$message, "\n")
+    }, finally = {
+      # Clean up temp file
+      unlink(temp_file)
+    })
+    
+  } else {
+    cat("No indicators data to save for", interval_name, "\n")
+  }
+}
+
+# Calculate and save 1-minute indicators
+if (nrow(data_1min) > 0) {
+  cat("\nCalculating 1-minute indicators...\n")
+  data_1min_indicators <- calculate_intraday_indicators(data_1min)
+  save_indicators_to_azure(data_1min_indicators, "1min")
+}
+
+# Calculate and save 5-minute indicators  
+if (nrow(data_5min) > 0) {
+  cat("\nCalculating 5-minute indicators...\n")
+  data_5min_indicators <- calculate_intraday_indicators(data_5min)
+  save_indicators_to_azure(data_5min_indicators, "5min")
+}
+
+cat("\nIntraday indicators calculation completed.\n")

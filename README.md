@@ -6,6 +6,9 @@ This repository contains GitHub Actions that fetch stock market data at differen
 
 - **Minute-level data**: Fetches 1-minute and 5-minute OHLCV data during market hours
 - **Hourly and Daily data**: Fetches 1-hour and 1-day OHLCV data every hour
+- **Technical Indicators**: Automatically calculates indicators after data fetch
+  - Intraday indicators for 1min/5min data (EMA, SMA, RSI, VWAP, Bollinger Bands, etc.)
+  - Daily indicators for hourly/daily data (20/50/100/200 SMA/EMA, MACD, ATR, etc.)
 - Runs automatically on schedule or can be triggered manually
 - Stores data in Azure Blob Storage in Parquet format
 - Handles market hours and trading days automatically
@@ -39,7 +42,7 @@ This repository contains GitHub Actions that fetch stock market data at differen
 
 Data is saved in the Azure container with the following structure:
 ```
-raw_data/
+raw_data/                          # Raw OHLCV data
 ├── raw_data_1min.parquet          # Current day's 1-minute data
 ├── raw_data_5min.parquet          # Current day's 5-minute data
 ├── raw_data_1h.parquet            # Current hourly data (60 days)
@@ -48,6 +51,16 @@ raw_data/
 ├── historic_raw_data_5min.parquet # Cumulative historic 5-minute data
 ├── historic_raw_data_1h.parquet   # Cumulative historic hourly data
 └── historic_raw_data_1d.parquet   # Cumulative historic daily data
+
+indicators/                        # Data with technical indicators
+├── data_feed_1min.parquet        # Current 1-minute data with indicators
+├── data_feed_5min.parquet        # Current 5-minute data with indicators
+├── data_feed_1h.parquet          # Current hourly data with indicators
+├── data_feed_1d.parquet          # Current daily data with indicators
+├── historic_data_feed_1min.parquet # Historic 1-minute with indicators
+├── historic_data_feed_5min.parquet # Historic 5-minute with indicators
+├── historic_data_feed_1h.parquet   # Historic hourly with indicators
+└── historic_data_feed_1d.parquet   # Historic daily with indicators
 ```
 
 Each Parquet file contains:

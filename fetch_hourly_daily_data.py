@@ -175,6 +175,16 @@ def main():
     save_to_azure(container_client, daily_data, '1d')
     
     print("\nData fetching completed for hourly and daily intervals.")
+    
+    # Run indicator calculations
+    print("\n" + "="*60)
+    print("Calculating indicators...")
+    try:
+        from calculate_indicators import main as calculate_indicators_main
+        calculate_indicators_main()
+    except Exception as e:
+        print(f"Error calculating indicators: {str(e)}")
+        print("Indicators calculation failed but data fetch was successful.")
 
 if __name__ == "__main__":
     main()

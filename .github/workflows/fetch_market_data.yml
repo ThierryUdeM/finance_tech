@@ -33,6 +33,11 @@ jobs:
       run: |
         Rscript setup.R
         
+    - name: Install additional R packages
+      run: |
+        Rscript -e "if (!require('TTR')) install.packages('TTR', repos='http://cran.rstudio.com/')"
+        Rscript -e "if (!require('zoo')) install.packages('zoo', repos='http://cran.rstudio.com/')"
+        
     - name: Install Python dependencies
       run: |
         pip3 install -r requirements.txt
