@@ -24,7 +24,15 @@ tickers <- unlist(strsplit(tickers_string, ","))
 tickers <- trimws(tickers)
 tickers_for_yf <- paste(tickers, collapse = " ")
 
-# Import yfinance
+# Ensure Python is configured
+use_python("/usr/bin/python3", required = TRUE)
+
+# Check if yfinance is installed, if not install it
+if (!py_module_available("yfinance")) {
+  system("pip3 install yfinance")
+}
+
+# Import the module
 yf <- import("yfinance")
 
 # Connect to Azure container
