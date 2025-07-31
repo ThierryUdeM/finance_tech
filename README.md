@@ -85,6 +85,25 @@ Each Parquet file contains:
 - `close`: Closing price
 - `volume`: Trading volume
 
+## Testing Email Alerts
+
+To test the email alert system locally:
+
+```bash
+# Set environment variables
+export GMAIL_USER="your-gmail@gmail.com"
+export GMAIL_APP_PWD="your-app-specific-password"
+export ALERT_TO="recipient@email.com"
+
+# Run the comprehensive test
+python test_email_alert.py
+
+# Or run the quick test
+python quick_email_test.py
+```
+
+**Important**: Use an app-specific password, not your regular Gmail password. Generate one at: https://myaccount.google.com/apppasswords
+
 ## Manual Trigger
 
 You can manually trigger the workflow from the Actions tab in your GitHub repository.
