@@ -93,11 +93,18 @@ def check_trend_continuation_patterns(daily_df, hourly_df):
     """Check for trend continuation patterns"""
     alerts = []
     
+    if len(hourly_df) == 0:
+        print("Skipping trend continuation patterns - no hourly data available")
+        return alerts
+    
     for ticker in daily_df['ticker'].unique():
         daily_ticker = daily_df[daily_df['ticker'] == ticker].sort_values('datetime')
         hourly_ticker = hourly_df[hourly_df['ticker'] == ticker].sort_values('datetime')
         
-        if len(daily_ticker) < 50 or len(hourly_ticker) < 24:
+        if len(daily_ticker) < 50:
+            continue
+            
+        if len(hourly_ticker) < 24:
             continue
             
         # Get latest daily data
@@ -152,6 +159,10 @@ def check_trend_continuation_patterns(daily_df, hourly_df):
 def check_breakout_patterns(daily_df, hourly_df):
     """Check for breakout/expansion patterns"""
     alerts = []
+    
+    if len(hourly_df) == 0:
+        print("Skipping breakout patterns - no hourly data available")
+        return alerts
     
     for ticker in daily_df['ticker'].unique():
         daily_ticker = daily_df[daily_df['ticker'] == ticker].sort_values('datetime')
@@ -222,6 +233,10 @@ def check_mean_reversion_patterns(daily_df, hourly_df):
     """Check for mean reversion/exhaustion patterns"""
     alerts = []
     
+    if len(hourly_df) == 0:
+        print("Skipping mean reversion patterns - no hourly data available")
+        return alerts
+    
     for ticker in daily_df['ticker'].unique():
         daily_ticker = daily_df[daily_df['ticker'] == ticker].sort_values('datetime')
         hourly_ticker = hourly_df[hourly_df['ticker'] == ticker].sort_values('datetime')
@@ -281,6 +296,10 @@ def check_mean_reversion_patterns(daily_df, hourly_df):
 def check_reversal_patterns(daily_df, hourly_df):
     """Check for reversal patterns at key structure levels"""
     alerts = []
+    
+    if len(hourly_df) == 0:
+        print("Skipping reversal patterns - no hourly data available")
+        return alerts
     
     for ticker in daily_df['ticker'].unique():
         daily_ticker = daily_df[daily_df['ticker'] == ticker].sort_values('datetime')
@@ -345,6 +364,14 @@ def check_volume_confirmation(alerts, hourly_df):
     """Add volume confirmation to existing alerts"""
     confirmed_alerts = []
     
+    if len(hourly_df) == 0:
+        # No hourly data, return alerts without volume confirmation
+        for alert in alerts:
+            alert['volume_confirmed'] = False
+            alert['confidence'] = 'LOW'
+            confirmed_alerts.append(alert)
+        return confirmed_alerts
+    
     for alert in alerts:
         ticker = alert['ticker']
         hourly_ticker = hourly_df[hourly_df['ticker'] == ticker].sort_values('datetime')
@@ -398,9 +425,17 @@ def main():
     daily_df = load_data_from_azure(container_client, "indicators_azure/data_feed_1d.parquet")
     hourly_df = load_data_from_azure(container_client, "indicators_azure/data_feed_1h.parquet")
     
-    if daily_df is None or hourly_df is None:
-        print("Error: Could not load indicator data")
+    if daily_df is None:
+        print("Error: Could not load daily indicator data")
         return
+        
+    if hourly_df is None:
+        print("Warning: Could not load hourly indicator data")
+        print("Pattern detection will be limited to daily patterns only")
+        # Create empty dataframe with expected columns to avoid errors
+        hourly_df = pd.DataFrame(columns=['ticker', 'datetime', 'close', 'volume_spike_ratio', 
+                                         'ema_24', 'rsi_14', 'obv', 'hammer', 'engulfing', 
+                                         'inside_bar', 'high', 'low', 'open', 'volume'])
     
     print(f"Loaded {len(daily_df)} daily records and {len(hourly_df)} hourly records")
     

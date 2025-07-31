@@ -88,7 +88,11 @@ def fetch_data(tickers, interval, period):
         if combined_data:
             result = pd.concat(combined_data, ignore_index=True)
             # Ensure datetime is timezone-aware (EST/EDT)
-            result['datetime'] = pd.to_datetime(result['datetime']).dt.tz_localize('UTC').dt.tz_convert('America/New_York')
+            # Check if already timezone-aware
+            if result['datetime'].dt.tz is None:
+                result['datetime'] = pd.to_datetime(result['datetime']).dt.tz_localize('UTC').dt.tz_convert('America/New_York')
+            else:
+                result['datetime'] = pd.to_datetime(result['datetime']).dt.tz_convert('America/New_York')
             return result
         else:
             return pd.DataFrame()

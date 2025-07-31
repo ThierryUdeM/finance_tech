@@ -35,6 +35,14 @@ def calculate_hourly_indicators(df):
     # Sort by datetime
     df = df.sort_values('datetime').copy()
     
+    # Ensure datetime is properly handled
+    if df['datetime'].dt.tz is not None:
+        # If timezone aware, convert to EST
+        df['datetime'] = pd.to_datetime(df['datetime']).dt.tz_convert('America/New_York')
+    else:
+        # If naive, assume UTC and convert
+        df['datetime'] = pd.to_datetime(df['datetime']).dt.tz_localize('UTC').dt.tz_convert('America/New_York')
+    
     # Basic price levels
     df['prior_close'] = df.groupby('ticker')['close'].shift(1)
     
@@ -184,6 +192,12 @@ def load_data_from_azure(container_client, blob_name):
 def save_data_to_azure(container_client, df, blob_name):
     """Save data to Azure blob storage"""
     try:
+        # Ensure timezone is handled properly before saving
+        if 'datetime' in df.columns and df['datetime'].dt.tz is not None:
+            # Convert timezone-aware to naive (in EST) for storage
+            df = df.copy()
+            df['datetime'] = df['datetime'].dt.tz_localize(None)
+        
         buffer = pa.BufferOutputStream()
         pq.write_table(pa.Table.from_pandas(df), buffer)
         
