@@ -1,44 +1,47 @@
-# Pattern Scanner Workflow
+# Market Data Fetcher for Azure
 
-This folder contains only the essential files needed for the GitHub Actions pattern scanner workflow.
-
-## Files Included
-
-- `.github/workflows/pattern_scanner.yml` - GitHub Actions workflow that runs every 15 minutes during trading hours
-- `combined_pattern_scanner_gh.py` - Main scanner using TradingPatternScanner (84.5% accuracy) and TA-Lib
-- `pattern_evaluator.py` - End-of-day evaluation of detected patterns
-- `pattern_signal_tracker.py` - Tracks and evaluates pattern signals
-- `requirements_pattern_scanner.txt` - Python dependencies
-
-## Setup Instructions
-
-1. **Copy this folder to your GitHub repository**
-
-2. **Set up GitHub Secrets** (Settings → Secrets and variables → Actions):
-   - `STORAGE_ACCOUNT_NAME` - Your Azure storage account name
-   - `ACCESS_KEY` - Your Azure storage account access key
-   - `CONTAINER_NAME` - Your Azure container name
-
-3. **Create config/.env file** (for local testing):
-   ```
-   AZURE_STORAGE_ACCOUNT=your_storage_account
-   AZURE_STORAGE_KEY=your_access_key
-   AZURE_CONTAINER_NAME=your_container_name
-   ```
-
-4. **Push to GitHub** and the workflow will run automatically
+This GitHub Action fetches stock market data every minute during market hours and stores it in Azure Blob Storage.
 
 ## Features
 
-- Detects chart patterns using TradingPatternScanner (84.5% accuracy)
-- Detects 60+ candlestick patterns using TA-Lib
-- Runs every 15 minutes during market hours
-- Saves results to Azure blob storage
-- End-of-day evaluation of pattern success rates
-- Multi-ticker support (NVDA, AAPL, MSFT, GOOGL, TSLA, SPY, QQQ)
+- Fetches 1-minute and 5-minute OHLCV data for multiple tickers
+- Runs automatically every minute during market hours (9:30 AM - 4:00 PM EST)
+- Stores data in Azure Blob Storage in Parquet format
+- Handles market hours and trading days automatically
+- Saves both timestamped and "latest" versions of data
 
-## Requirements
+## Setup
 
-- Python 3.10+
-- TradingPatternScanner (installed from GitHub)
-- TA-Lib (built from source in workflow)
+1. Fork this repository
+
+2. Add the following GitHub Secrets in your repository settings:
+   - `TICKERS`: Comma-separated list of stock tickers (e.g., `AAPL,MSFT,GOOGL`)
+   - `AZURE_STORAGE_ACCOUNT`: Your Azure storage account name
+   - `AZURE_CONTAINER_NAME`: Azure container name (default: `finance`)
+   - `AZURE_SAS_TOKEN`: SAS token with write permissions to the container
+
+3. The workflow will run automatically during market hours or can be triggered manually
+
+## Data Structure
+
+Data is saved in the Azure container with the following structure:
+```
+raw_data/
+├── raw_data_1min_YYYYMMDD_HHMMSS.parquet  # Timestamped 1-minute data
+├── raw_data_1min_latest.parquet           # Latest 1-minute data
+├── raw_data_5min_YYYYMMDD_HHMMSS.parquet  # Timestamped 5-minute data
+└── raw_data_5min_latest.parquet           # Latest 5-minute data
+```
+
+Each Parquet file contains:
+- `ticker`: Stock symbol
+- `datetime`: Timestamp in EST/EDT
+- `open`: Opening price
+- `high`: High price
+- `low`: Low price
+- `close`: Closing price
+- `volume`: Trading volume
+
+## Manual Trigger
+
+You can manually trigger the workflow from the Actions tab in your GitHub repository.
