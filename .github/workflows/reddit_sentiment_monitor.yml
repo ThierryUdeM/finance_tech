@@ -54,8 +54,7 @@ jobs:
     - name: Install R packages
       run: |
         Rscript -e "install.packages('remotes', repos='https://cran.r-project.org')"
-        Rscript -e "packages <- c('RedditExtractoR', 'dplyr', 'stringr', 'readr', 'lubridate', 'arrow', 'sentimentr', 'jsonlite', 'tibble', 'tidyr', 'ggplot2')"
-        Rscript -e "for(pkg in packages) { if (!require(pkg, character.only = TRUE)) install.packages(pkg, repos='https://cran.r-project.org') }"
+        Rscript -e "packages <- c('RedditExtractoR', 'dplyr', 'stringr', 'readr', 'lubridate', 'arrow', 'sentimentr', 'jsonlite', 'tibble', 'tidyr', 'ggplot2'); for(pkg in packages) { if (!require(pkg, character.only = TRUE)) install.packages(pkg, repos='https://cran.r-project.org') }"
     
     - name: Download existing history from Azure (if exists)
       env:
@@ -119,13 +118,22 @@ jobs:
       run: |
         echo "Running Reddit sentiment scanner..."
         
+        # Ensure directories exist
+        mkdir -p data/traction/history
+        
         # Default to 'both' if not specified
         ANALYSIS_TYPE="${{ github.event.inputs.analysis_type || 'both' }}"
         
         if [ "$ANALYSIS_TYPE" = "scrape" ] || [ "$ANALYSIS_TYPE" = "both" ]; then
           echo "=== Running Scraper ==="
           timeout 300 Rscript reddit_sentiment_strict.R || {
-            echo "Scraper timeout or error, continuing..."
+            EXIT_CODE=$?
+            echo "Scraper exited with code $EXIT_CODE"
+            if [ $EXIT_CODE -eq 124 ]; then
+              echo "Scraper timeout after 5 minutes, continuing..."
+            else
+              echo "Scraper encountered an error, continuing..."
+            fi
           }
           
           # Save timestamped copy
@@ -343,13 +351,28 @@ jobs:
           fi
         fi
     
+    - name: Check for artifacts to upload
+      id: check_artifacts
+      if: always()
+      run: |
+        # Check if any files exist to upload
+        if ls data/traction/*.csv 2>/dev/null || ls data/traction/*.txt 2>/dev/null || ls data/traction/history/*.csv 2>/dev/null; then
+          echo "has_artifacts=true" >> $GITHUB_OUTPUT
+          echo "Found files to upload as artifacts"
+        else
+          echo "has_artifacts=false" >> $GITHUB_OUTPUT
+          echo "No files found to upload"
+        fi
+    
     - name: Upload artifacts
       uses: actions/upload-artifact@v4
-      if: always()
+      if: always() && steps.check_artifacts.outputs.has_artifacts == 'true'
       with:
         name: reddit-sentiment-results-${{ github.run_number }}
         path: |
           data/traction/*.csv
           data/traction/*.txt
           data/traction/history/*.csv
+          data/traction/*.rds
         retention-days: 30
+        if-no-files-found: warn
