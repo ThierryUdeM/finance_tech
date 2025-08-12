@@ -1,0 +1,165 @@
+name: Test Reddit Connection
+
+on:
+  workflow_dispatch:
+
+jobs:
+  test-connection:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+    
+    - name: Setup R
+      uses: r-lib/actions/setup-r@v2
+      with:
+        r-version: '4.3.3'
+    
+    - name: Install dependencies
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y libcurl4-openssl-dev libssl-dev libxml2-dev
+    
+    - name: Install R packages
+      run: |
+        Rscript -e "install.packages(c('RedditExtractoR', 'httr', 'jsonlite', 'dplyr', 'stringr', 'readr'), repos='https://cran.r-project.org')"
+    
+    - name: Test RedditExtractoR with browser User-Agent
+      run: |
+        echo "=== Testing RedditExtractoR ==="
+        Rscript -e "
+        library(RedditExtractoR)
+        library(httr)
+        
+        # Use browser-like User-Agent
+        user_agent <- 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+        
+        options(
+          HTTPUserAgent = user_agent,
+          timeout = 30
+        )
+        
+        httr::set_config(httr::user_agent(user_agent))
+        
+        cat('Testing with User-Agent:', user_agent, '\n\n')
+        
+        # Test 1: Simple subreddit fetch
+        tryCatch({
+          urls <- find_thread_urls(subreddit = 'technology', sort_by = 'new')
+          if(!is.null(urls) && nrow(urls) > 0) {
+            cat('✅ Test 1 PASSED: Got', nrow(urls), 'posts from r/technology\n')
+          } else {
+            cat('❌ Test 1 FAILED: No posts returned\n')
+          }
+        }, error = function(e) {
+          cat('❌ Test 1 ERROR:', e\$message, '\n')
+        })
+        "
+    
+    - name: Test Fallback JSON API
+      run: |
+        echo "=== Testing Fallback Method ==="
+        Rscript -e "
+        library(httr)
+        library(jsonlite)
+        
+        # Test direct JSON API
+        user_agent <- 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+        url <- 'https://www.reddit.com/r/technology/new.json?limit=5'
+        
+        response <- GET(url, add_headers('User-Agent' = user_agent))
+        
+        cat('Response status:', status_code(response), '\n')
+        
+        if(status_code(response) == 200) {
+          data <- fromJSON(content(response, as = 'text'), flatten = TRUE)
+          posts <- data\$data\$children\$data
+          
+          if(!is.null(posts) && nrow(posts) > 0) {
+            cat('✅ Fallback PASSED: Got', nrow(posts), 'posts\n')
+            cat('First post title:', substr(posts\$title[1], 1, 50), '...\n')
+          } else {
+            cat('❌ Fallback FAILED: No posts in response\n')
+          }
+        } else {
+          cat('❌ Fallback FAILED: HTTP', status_code(response), '\n')
+        }
+        "
+    
+    - name: Run minimal scraper test
+      run: |
+        echo "=== Testing Minimal Scraper ==="
+        
+        # Create a minimal test version
+        cat > test_minimal.R << 'EOF'
+        library(httr)
+        library(jsonlite)
+        library(dplyr)
+        library(stringr)
+        
+        # Test with direct API
+        get_reddit_data <- function() {
+          urls <- list(
+            "https://www.reddit.com/r/wallstreetbets/hot.json?limit=3",
+            "https://www.reddit.com/r/stocks/new.json?limit=3"
+          )
+          
+          all_tickers <- c()
+          
+          for(url in urls) {
+            cat("Fetching:", url, "\n")
+            
+            response <- GET(url, add_headers(
+              'User-Agent' = 'Mozilla/5.0 (X11; Linux x86_64) Chrome/120.0.0.0'
+            ))
+            
+            if(status_code(response) == 200) {
+              data <- fromJSON(content(response, as = 'text'), flatten = TRUE)
+              posts <- data$data$children$data
+              
+              if(!is.null(posts)) {
+                for(i in 1:nrow(posts)) {
+                  text <- paste(posts$title[i], posts$selftext[i])
+                  
+                  # Find cashtags
+                  cashtags <- str_extract_all(text, "\\$[A-Z]{1,5}\\b")[[1]]
+                  if(length(cashtags) > 0) {
+                    tickers <- gsub("\\$", "", cashtags)
+                    all_tickers <- c(all_tickers, tickers)
+                  }
+                }
+              }
+            }
+            
+            Sys.sleep(2)  # Rate limit
+          }
+          
+          return(unique(all_tickers))
+        }
+        
+        tickers <- get_reddit_data()
+        
+        if(length(tickers) > 0) {
+          cat("\n✅ Found tickers:", paste(tickers, collapse = ", "), "\n")
+        } else {
+          cat("\n⚠️ No tickers found (may not be any in current posts)\n")
+        }
+        EOF
+        
+        Rscript test_minimal.R
+    
+    - name: Summary
+      if: always()
+      run: |
+        echo ""
+        echo "========================================="
+        echo "TEST SUMMARY"
+        echo "========================================="
+        echo "The workflow tested three approaches:"
+        echo "1. RedditExtractoR with browser User-Agent"
+        echo "2. Direct Reddit JSON API"
+        echo "3. Minimal ticker extraction"
+        echo ""
+        echo "Check the output above to see which methods work."
+        echo "========================================="

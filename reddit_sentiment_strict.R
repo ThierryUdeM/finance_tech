@@ -10,6 +10,23 @@ suppressPackageStartupMessages({
   library(readr)
 })
 
+# Configure HTTP options for Reddit API (especially for GitHub Actions)
+# Use a more browser-like User-Agent to avoid 403 errors
+user_agent <- "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36 RedditSentimentBot/1.0"
+
+options(
+  HTTPUserAgent = user_agent,
+  timeout = 60,
+  download.file.method = "curl",
+  download.file.extra = paste0("-H 'User-Agent: ", user_agent, "'")
+)
+
+# Set httr config if available - this is critical for RedditExtractoR
+if(requireNamespace("httr", quietly = TRUE)) {
+  httr::set_config(httr::user_agent(user_agent))
+  httr::set_config(httr::config(ssl_verifypeer = TRUE))
+}
+
 CONFIG <- list(
   storage_dir = "data/traction",
   nasdaq_url = "https://www.nasdaqtrader.com/dynamic/symdir/nasdaqlisted.txt",
@@ -158,15 +175,35 @@ all_mentions <- list()
 for(sub in CONFIG$subreddits) {
   cat(sprintf("Fetching r/%s...\n", sub))
   
-  # Get URLs
-  urls <- tryCatch({
-    find_thread_urls(subreddit = sub, sort_by = "hot")
-  }, error = function(e) {
-    cat(sprintf("  Error: %s\n", e$message))
-    NULL
-  })
+  # Try multiple times with different sort methods to work around rate limits
+  urls <- NULL
+  for(sort_method in c("hot", "new", "top")) {
+    urls <- tryCatch({
+      # Add small delay between attempts
+      Sys.sleep(2)
+      result <- find_thread_urls(
+        subreddit = sub, 
+        sort_by = sort_method,
+        period = if(sort_method == "top") "day" else NULL
+      )
+      if(!is.null(result) && nrow(result) > 0) {
+        cat(sprintf("  Success with sort=%s, got %d posts\n", sort_method, nrow(result)))
+        result
+      } else {
+        NULL
+      }
+    }, error = function(e) {
+      cat(sprintf("  Failed with sort=%s: %s\n", sort_method, e$message))
+      NULL
+    })
+    
+    if(!is.null(urls) && nrow(urls) > 0) break
+  }
   
-  if(is.null(urls) || nrow(urls) == 0) next
+  if(is.null(urls) || nrow(urls) == 0) {
+    cat(sprintf("  Skipping r/%s - no posts retrieved\n", sub))
+    next
+  }
   
   urls <- head(urls, CONFIG$max_posts)
   cat(sprintf("  Processing %d posts...\n", nrow(urls)))
