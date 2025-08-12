@@ -1,0 +1,275 @@
+name: View Sentiment Results
+
+on:
+  workflow_dispatch:
+    inputs:
+      report_type:
+        description: 'Type of report to generate'
+        required: true
+        default: 'summary'
+        type: choice
+        options:
+          - summary
+          - detailed
+          - trending
+          - historical
+
+jobs:
+  view-results:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+    
+    - name: Setup Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.10'
+    
+    - name: Install dependencies
+      run: |
+        pip install pandas matplotlib seaborn azure-storage-blob
+        
+        # Install Azure CLI
+        curl -sL https://aka.ms/InstallAzureCLIDeb | sudo bash
+    
+    - name: Download data from Azure
+      env:
+        AZURE_STORAGE_ACCOUNT: ${{ secrets.STORAGE_ACCOUNT_NAME }}
+        AZURE_STORAGE_KEY: ${{ secrets.ACCESS_KEY }}
+        AZURE_CONTAINER: ${{ secrets.CONTAINER_NAME }}
+      run: |
+        mkdir -p data/download
+        
+        # Download latest results
+        az storage blob download \
+          --account-name "$AZURE_STORAGE_ACCOUNT" \
+          --account-key "$AZURE_STORAGE_KEY" \
+          --container-name "$AZURE_CONTAINER" \
+          --name "reddit_sentiment/latest/reddit_mentions_latest.csv" \
+          --file "data/download/reddit_mentions_latest.csv" \
+          --no-progress || echo "No latest mentions file"
+        
+        az storage blob download \
+          --account-name "$AZURE_STORAGE_ACCOUNT" \
+          --account-key "$AZURE_STORAGE_KEY" \
+          --container-name "$AZURE_CONTAINER" \
+          --name "reddit_sentiment/latest/trend_analysis_latest.csv" \
+          --file "data/download/trend_analysis_latest.csv" \
+          --no-progress || echo "No trend analysis file"
+        
+        az storage blob download \
+          --account-name "$AZURE_STORAGE_ACCOUNT" \
+          --account-key "$AZURE_STORAGE_KEY" \
+          --container-name "$AZURE_CONTAINER" \
+          --name "reddit_sentiment/history/master_history.csv" \
+          --file "data/download/master_history.csv" \
+          --no-progress || echo "No history file"
+    
+    - name: Generate Report
+      run: |
+        cat > generate_report.py << 'EOF'
+        import pandas as pd
+        import sys
+        from datetime import datetime, timedelta
+        import os
+        
+        report_type = "${{ github.event.inputs.report_type }}"
+        
+        def load_data():
+            data = {}
+            
+            # Load latest mentions
+            if os.path.exists("data/download/reddit_mentions_latest.csv"):
+                data['latest'] = pd.read_csv("data/download/reddit_mentions_latest.csv")
+            
+            # Load trend analysis
+            if os.path.exists("data/download/trend_analysis_latest.csv"):
+                data['trends'] = pd.read_csv("data/download/trend_analysis_latest.csv")
+            
+            # Load history
+            if os.path.exists("data/download/master_history.csv"):
+                data['history'] = pd.read_csv("data/download/master_history.csv")
+            
+            return data
+        
+        def generate_summary(data):
+            print("# Reddit Sentiment Summary Report")
+            print(f"Generated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S UTC')}")
+            print("=" * 60)
+            
+            if 'latest' in data:
+                df = data['latest']
+                print("\n## Top 10 Mentioned Stocks")
+                print("-" * 40)
+                for i, row in df.head(10).iterrows():
+                    emoji = "🔥" if row['mentions'] > 20 else "📈" if row['mentions'] > 10 else "👀"
+                    print(f"{i+1:2}. {emoji} {row['ticker']:<5} | Mentions: {row['mentions']:3} | Posts: {row['posts']:2} | Comments: {row['comments']:3}")
+                
+                print(f"\nTotal unique tickers: {len(df)}")
+                print(f"High activity (>10 mentions): {len(df[df['mentions'] > 10])}")
+            
+            if 'trends' in data and not data['trends'].empty:
+                print("\n## Trending Analysis")
+                print("-" * 40)
+                trends = data['trends']
+                if 'category' in trends.columns:
+                    for cat in trends['category'].unique()[:5]:
+                        stocks = trends[trends['category'] == cat]['ticker'].head(3).tolist()
+                        if stocks:
+                            print(f"{cat}: {', '.join(stocks)}")
+        
+        def generate_detailed(data):
+            print("# Detailed Reddit Sentiment Analysis")
+            print(f"Generated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S UTC')}")
+            print("=" * 60)
+            
+            if 'latest' in data:
+                df = data['latest']
+                print("\n## Complete Stock List")
+                print("-" * 40)
+                print(df.to_string(index=False))
+            
+            if 'history' in data and not data['history'].empty:
+                hist = data['history']
+                print(f"\n## Historical Data Points")
+                print(f"Total records: {len(hist)}")
+                if 'timestamp' in hist.columns:
+                    hist['timestamp'] = pd.to_datetime(hist['timestamp'])
+                    print(f"Date range: {hist['timestamp'].min()} to {hist['timestamp'].max()}")
+                    
+                    # Top movers over time
+                    top_tickers = hist.groupby('ticker')['mentions'].sum().nlargest(10).index
+                    print("\n## Top 10 Stocks by Total Mentions")
+                    for ticker in top_tickers:
+                        total = hist[hist['ticker'] == ticker]['mentions'].sum()
+                        print(f"  {ticker}: {total} total mentions")
+        
+        def generate_trending(data):
+            print("# Trending Stocks Report")
+            print(f"Generated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S UTC')}")
+            print("=" * 60)
+            
+            if 'history' in data and not data['history'].empty:
+                hist = data['history'].copy()
+                if 'timestamp' in hist.columns:
+                    hist['timestamp'] = pd.to_datetime(hist['timestamp'])
+                    
+                    # Calculate 24h momentum
+                    now = datetime.now()
+                    last_24h = hist[hist['timestamp'] >= now - timedelta(hours=24)]
+                    prev_24h = hist[(hist['timestamp'] >= now - timedelta(hours=48)) & 
+                                   (hist['timestamp'] < now - timedelta(hours=24))]
+                    
+                    if not last_24h.empty:
+                        current = last_24h.groupby('ticker')['mentions'].sum()
+                        
+                        if not prev_24h.empty:
+                            previous = prev_24h.groupby('ticker')['mentions'].sum()
+                            
+                            # Calculate momentum
+                            momentum = pd.DataFrame({
+                                'current': current,
+                                'previous': previous
+                            }).fillna(0)
+                            
+                            momentum['change'] = momentum['current'] - momentum['previous']
+                            momentum['change_pct'] = (momentum['change'] / momentum['previous'].replace(0, 1)) * 100
+                            
+                            print("\n## 🚀 Biggest Gainers (24h)")
+                            print("-" * 40)
+                            gainers = momentum.nlargest(10, 'change_pct')
+                            for ticker, row in gainers.iterrows():
+                                if row['change_pct'] > 0:
+                                    print(f"{ticker:<6} | +{row['change_pct']:6.1f}% | Current: {row['current']:.0f} | Prev: {row['previous']:.0f}")
+                            
+                            print("\n## 📉 Biggest Losers (24h)")
+                            print("-" * 40)
+                            losers = momentum.nsmallest(5, 'change_pct')
+                            for ticker, row in losers.iterrows():
+                                if row['change_pct'] < 0:
+                                    print(f"{ticker:<6} | {row['change_pct']:6.1f}% | Current: {row['current']:.0f} | Prev: {row['previous']:.0f}")
+                        
+                        print("\n## 🆕 New Entries (First time in 24h)")
+                        print("-" * 40)
+                        all_recent = set(last_24h['ticker'].unique())
+                        all_prev = set(prev_24h['ticker'].unique()) if not prev_24h.empty else set()
+                        new_entries = all_recent - all_prev
+                        for ticker in list(new_entries)[:10]:
+                            mentions = last_24h[last_24h['ticker'] == ticker]['mentions'].sum()
+                            print(f"{ticker:<6} | {mentions} mentions")
+        
+        def generate_historical(data):
+            print("# Historical Analysis Report")
+            print(f"Generated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S UTC')}")
+            print("=" * 60)
+            
+            if 'history' in data and not data['history'].empty:
+                hist = data['history'].copy()
+                if 'timestamp' in hist.columns:
+                    hist['timestamp'] = pd.to_datetime(hist['timestamp'])
+                    hist['date'] = hist['timestamp'].dt.date
+                    
+                    # Daily aggregates
+                    daily = hist.groupby(['date', 'ticker'])['mentions'].sum().reset_index()
+                    
+                    print("\n## Last 7 Days Summary")
+                    print("-" * 40)
+                    for i in range(7):
+                        date = datetime.now().date() - timedelta(days=i)
+                        day_data = daily[daily['date'] == date]
+                        if not day_data.empty:
+                            top = day_data.nlargest(5, 'mentions')
+                            tickers = [f"{row['ticker']}({row['mentions']:.0f})" for _, row in top.iterrows()]
+                            print(f"{date}: {', '.join(tickers)}")
+                    
+                    # All-time top performers
+                    print("\n## All-Time Most Mentioned")
+                    print("-" * 40)
+                    all_time = hist.groupby('ticker')['mentions'].agg(['sum', 'count', 'mean'])
+                    all_time = all_time.nlargest(15, 'sum')
+                    for ticker, row in all_time.iterrows():
+                        print(f"{ticker:<6} | Total: {row['sum']:6.0f} | Appearances: {row['count']:3.0f} | Avg: {row['mean']:5.1f}")
+        
+        # Main execution
+        data = load_data()
+        
+        if not data:
+            print("❌ No data files found")
+            sys.exit(1)
+        
+        if report_type == "summary":
+            generate_summary(data)
+        elif report_type == "detailed":
+            generate_detailed(data)
+        elif report_type == "trending":
+            generate_trending(data)
+        elif report_type == "historical":
+            generate_historical(data)
+        
+        print("\n" + "=" * 60)
+        print("Report complete")
+        EOF
+        
+        python generate_report.py > report.txt
+        cat report.txt
+    
+    - name: Save Report as Artifact
+      uses: actions/upload-artifact@v3
+      with:
+        name: sentiment-report-${{ github.event.inputs.report_type }}-${{ github.run_number }}
+        path: report.txt
+        retention-days: 30
+    
+    - name: Create Report Issue
+      if: github.event.inputs.report_type == 'trending'
+      env:
+        GH_TOKEN: ${{ github.token }}
+      run: |
+        REPORT_CONTENT=$(cat report.txt)
+        
+        gh issue create \
+          --title "📊 Reddit Sentiment Report - ${{ github.event.inputs.report_type }} - $(date '+%Y-%m-%d')" \
+          --body "$REPORT_CONTENT" \
+          --label "reddit-sentiment,report"
